@@ -1,5 +1,5 @@
 ; ---------------------------------------------------------------------------
-; AURORA GRID row/tick ProTracker replay core.
+; AMIGA NAMETAMPLE A1200 row/tick ProTracker replay core.
 ;
 ; 4-channel M.K., PAL VBlank tick = 50 Hz = ProTracker BPM 125 tick rate.
 ; Supported commands: Cxx volume, F01..F1F speed. The generated module uses F06.

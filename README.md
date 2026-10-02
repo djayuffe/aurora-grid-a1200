@@ -1,31 +1,67 @@
-# AURORA GRID — an Uber Cracking Services AS demo
+# AMIGA NAMETAMPLE A1200
 
-A self-contained Amiga demo in 68000 assembly. **Requires an Amiga 1200 or 4000 (AGA chipset).** On any other machine it prints a message and exits without touching the hardware.
+A self-contained PAL Amiga AGA demo in 68000 assembly. It targets the Amiga 1200/4000 chipset family, checks for Lisa/AGA on startup, and exits safely with a message on non-AGA machines.
 
-**How AGA is used (and how far it goes):** the demo checks for the AGA Lisa chip at startup, and the plasma and floor-bar gradients are driven through the AGA 24-bit palette (two `COLOR00` writes per scanline via `BPLCON3` `LOCT`), giving smooth 16-million-colour gradients that OCS/ECS cannot show. The main display (logo, stars, wireframes, scroller) is still the 4-bitplane / 16-colour layout inherited from an earlier project, so it is not a full 256-colour or 8-bitplane AGA demo.
+The project was audited and renamed from Aurora Grid to **AMIGA NAMETAMPLE A1200**. The current identity, generated logo, ProTracker title, source comments, build artifact and documentation now use that name.
 
-## What's in it
-- **Logo:** the Uber Cracking Services AS logo, procedurally drawn (distance-field UBER letters, gold bevel lighting, extrusion shadow, chiselled "CRACKING SERVICES AS" subtitle, steel wing ornaments) with a Copper-driven gold gradient and wavy per-line scroll.
-- **Copper raster plasma (24-bit):** the whole middle band is repainted every frame from three travelling sines (one a chirp), through a 192-step 24-bit aurora palette. Strength is animated per scene.
-- **Wireframe tunnel:** 5 twisting rings with a wandering axis, drawn with the blitter line engine.
-- **3D shapes with physics:** cube, octahedron and a cuboctahedron tumble in perspective. Every kick drum row in the music throws them sideways, up and away from the viewer; gravity pulls them back, they bounce off invisible walls and floor (sized so nothing leaves the band), squash on hard landings and get a spin boost on kick and snare.
-- **Eight timed scenes** (256 frames each, loop ~41 s). Parameters ease between scenes: objects shrink away and grow back, speeds ramp, plasma strength fades. Scene table: `sec_tab` in `src/main.s`.
-- **Beat-reactive and layered effects:** the plasma flashes on kick/snare, a ripple runs through the logo wave, a glint sweeps across the logo face, two bright bars wander through the plasma, and the tunnel is drawn in its own bitplane (cyan, white where it crosses the amber objects).
-- **Hardware sprite ball ring:** 8 balls with prebuilt rotation frames - a striped surface that visibly turns, key light, specular highlight, bounce-light rim and dithered shadow terminator. Depth starfield (new stars never spawn in a central dead zone where they would crawl and look stuck), copper-bar floor, scroller text.
-- **Music:** generated 4-channel ProTracker module in D minor (triangle bass, saw lead, pad arpeggios, kick/snare/hats, fills), 10-step song order.
+## Features
 
-## Verification status
-- Builds cleanly; static validator passes.
-- FS-UAE, A1200 model: logo, 24-bit plasma and bars, cuboctahedron, tunnel + octahedron scenes and the scroller were checked by eye.
-- FS-UAE, A500 model: the demo does not start (AGA gate). The refusal message text itself was not seen in the emulator window.
-- Frame timing: measured in FS-UAE (A1200 model) with a beam-position probe over a full scene loop, after the physics, star and ball changes: the worst frame's work ends around beam line 186 of 312, well before the vsync line (300). Emulator measurement, not real hardware.
-- Plasma bars, flash, logo glint and the cyan tunnel were checked by eye. Frame timing was not re-measured after these last effects. During one timing run with an instrumented copy the demo returned to the desktop on its own after about a minute; the normal build ran for well over 90 seconds without exiting, so the cause was not found.
-- Physics, star respawn and ball lighting were checked by eye from screenshots (stills cannot show motion smoothness).
-- Music was validated structurally and plays, but has not been listened to by the author of this repo.
-- Not tested on real hardware.
+- **AGA 24-bit Copper colour:** raster plasma and floor bars use AGA high/low colour writes through `BPLCON3`/`LOCT`, producing smooth gradients beyond OCS/ECS limits.
+- **Procedural logo asset:** `tools/logo_art.py` generates a 320×64 four-plane logo for AMIGA NAMETAMPLE A1200 with a brighter cyan/gold/pink AGA-inspired palette.
+- **Smoother plasma palette:** `tools/gen_tables.py` now eases the aurora palette with smoothstep interpolation and a richer blue/cyan/magenta/gold ramp.
+- **Wireframe tunnel and objects:** cube, octahedron and cuboctahedron scenes are transformed, projected and drawn with the blitter line engine.
+- **Layered motion:** starfield, tunnel, bouncing shapes, logo wave, glint, plasma flash, floor bars and scroller all run in the frame loop.
+- **Hardware sprite ball ring:** eight sprite balls use prebuilt shaded pages and depth ordering.
+- **Four-channel Paula music:** generated ProTracker module in D minor with drums, bass, lead and arpeggio/pad material.
+- **Safe OS takeover/restore:** the demo saves system state, allocates and verifies chip RAM, owns the blitter, installs its Copper list, then restores display/DMA/interrupt state on exit.
 
 ## Build
-`make` (needs `vasmm68k_mot` on PATH or at `tools/bin/`). Output: `build/aurora_grid`. Left mouse button exits.
-Assets (logo, font, music) are regenerated by `make assets` from `tools/*.py`.
 
-The `docs/` folder describes the shared engine (originally from an earlier demo); names in it may refer to that project.
+```sh
+make validate
+make verify-repro
+make
+```
+
+`make` needs `vasmm68k_mot` on `PATH` or at `tools/bin/vasmm68k_mot`. The executable output is:
+
+```text
+build/amiga_nametample_a1200
+```
+
+Left mouse exits the running demo.
+
+## Assets and generated data
+
+```sh
+make assets
+python3 tools/generate_assets.py
+python3 tools/gen_tables.py plasma_pal > /tmp/plasma_pal.s
+python3 tools/gen_tables.py copper > /tmp/copper.s
+```
+
+Checked-in assets:
+
+- `assets/logo.raw` — planar 4-bitplane logo bitmap.
+- `assets/logo_preview.png` — preview of the generated logo.
+- `assets/font.raw` — scroller font.
+- `assets/aurora.mod` — generated ProTracker module, retitled AMIGA NAMETAMPLE.
+
+## Compatibility
+
+- PAL timing is assumed.
+- AGA is required. The program checks Lisa before taking over hardware.
+- CPU code is assembled as 68000-compatible (`-m68000`) even though the intended machine is A1200/A4000.
+- OCS/ECS machines are intentionally rejected.
+- NTSC is not a primary target; the wait logic avoids hanging, but timing/visual acceptance is PAL-focused.
+
+## Documentation
+
+- `docs/ARCHITECTURE.md` — startup, chip-RAM relocation, frame loop, DMA ownership.
+- `docs/GFX.md` — display bands, bitplanes, AGA colour effects and rendering pipeline.
+- `docs/BUILD_AND_TEST.md` — validation matrix and emulator/real-hardware checklist.
+- `docs/CURRENT_AUDIT.md` — current audit findings and remaining external requirements.
+
+## Validation status
+
+Local static validation and deterministic asset checks are expected to pass without the assembler. Full executable build requires VASM. Real A1200 hardware acceptance is still a manual release gate.

@@ -1,4 +1,6 @@
-# Code audit
+# Historical code audit
+
+This file records an earlier pre-rename audit pass. For the current AMIGA NAMETAMPLE A1200 audit, see `docs/CURRENT_AUDIT.md`.
 
 Scope: every file in the repository — the three assembly sources, the Makefile, all Python
 tools, the bootstrap script and the documentation. Method: line-by-line review against the

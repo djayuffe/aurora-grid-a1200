@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Deterministically generate every binary asset used by AURORA GRID.
+"""Deterministically generate every binary asset used by AMIGA NAMETAMPLE A1200.
 No host fonts, Pillow, timestamps, randomness without a fixed seed, or external tools.
 """
 from pathlib import Path
@@ -129,7 +129,7 @@ def pcm_open(n=1024):
 samples=[('TRIBASS',pcm_tri(),60,True),('SAWLEAD',pcm_saw(64,58),36,True),('KICK',pcm_kick(),64,False),
          ('SNARE',pcm_snare(),56,False),('HAT',pcm_hat(),28,False),('OPENHAT',pcm_open(),30,False),('PAD',pcm_pad(),34,True)]
 while len(samples)<31: samples.append(('',b'',0,False))
-header=bytearray(b'AURORA GRID'.ljust(20,b' ')[:20])
+header=bytearray(b'AMIGA NAMETAMPLE'.ljust(20,b' ')[:20])
 for name,data,vol,looped in samples:
     if len(data)%2: data+=b'\0'
     length=len(data)//2; loop_len=length if looped else 1

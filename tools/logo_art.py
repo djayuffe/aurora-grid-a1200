@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Procedural 16 colour logo art for the Uber Cracking Service intro.
+"""Procedural 16 colour logo art for the Amiga Nametample A1200 intro.
 
-Pure geometry, no image libraries, fully deterministic. The word UBER is built from stroked
-line and arc primitives (a distance field), then lit like an embossed metal bevel with an
-extruded drop shadow. CRACKING SERVICE is chiselled from the 5x7 font, flanked by wing
-ornaments. The result is a 320x64 image of colour indices 0..15, which the build stores as
-four bitplanes, together with the matching palette.
+Pure geometry, no image libraries, fully deterministic. The word AMIGA is built from a large
+chiselled 5x7 mask, then lit like an embossed metal bevel with an extruded drop shadow.
+NAMETAMPLE A1200 is chiselled from the 5x7 font, flanked by wing ornaments. The result is a
+320x64 image of colour indices 0..15, which the build stores as four bitplanes, together with
+the matching palette.
 
 Colour roles (indices):
    0 background              8 extrusion shadow
@@ -19,21 +19,28 @@ import math
 W, H = 320, 64
 SS = 3                       # supersampling per axis
 
-PALETTE = [0x001, 0x100, 0x631, 0x963, 0xFC4, 0xFE9, 0xFFC, 0xFFF,
-           0x424, 0x212, 0x246, 0x468, 0x6AC, 0xADF, 0xD42, 0xFFF]
+PALETTE = [0x001, 0x013, 0x245, 0x579, 0xFC4, 0xFE8, 0xDFF, 0xFFF,
+           0x303, 0x112, 0x246, 0x36A, 0x6BE, 0xCFF, 0xF5B, 0xFFF]
 
 # ---- 5x7 glyphs (only the letters this logo needs) -------------------------------------------
 GLYPHS = {
     ' ': ['00000'] * 7,
+    '0': ['01110', '10001', '10011', '10101', '11001', '10001', '01110'],
+    '1': ['00100', '01100', '00100', '00100', '00100', '00100', '01110'],
+    '2': ['01110', '10001', '00001', '00010', '00100', '01000', '11111'],
     'A': ['01110', '10001', '10001', '11111', '10001', '10001', '10001'],
     'C': ['01111', '10000', '10000', '10000', '10000', '10000', '01111'],
     'E': ['11111', '10000', '10000', '11110', '10000', '10000', '11111'],
     'G': ['01111', '10000', '10000', '10111', '10001', '10001', '01111'],
     'I': ['01110', '00100', '00100', '00100', '00100', '00100', '01110'],
     'K': ['10001', '10010', '10100', '11000', '10100', '10010', '10001'],
+    'L': ['10000', '10000', '10000', '10000', '10000', '10000', '11111'],
+    'M': ['10001', '11011', '10101', '10101', '10001', '10001', '10001'],
     'N': ['10001', '11001', '10101', '10011', '10001', '10001', '10001'],
+    'P': ['11110', '10001', '10001', '11110', '10000', '10000', '10000'],
     'R': ['11110', '10001', '10001', '11110', '10100', '10010', '10001'],
     'S': ['01111', '10000', '10000', '01110', '00001', '00001', '11110'],
+    'T': ['11111', '00100', '00100', '00100', '00100', '00100', '00100'],
     'V': ['10001', '10001', '10001', '10001', '10001', '01010', '00100'],
 }
 
@@ -95,47 +102,46 @@ def sample_field(prims, x, y):
 def build():
     img = [[0] * W for _ in range(H)]
 
-    # --- UBER: 4 letters, 3 px gaps -> total width 4*30 + 3*5
-    gap = 5
-    total = 4 * LW + 3 * gap
-    x0 = (W - total) / 2
-    prims = []
-    for i, ch in enumerate('UBER'):
-        prims += letter(ch, x0 + i * (LW + gap), 4.0)
-    field = lambda x, y: sample_field(prims, x, y)
-
-    def inside_depth(x, y):
-        return STROKE - field(x, y)          # > 0 inside the stroke, deepest on the centre line
-
-    light = (-0.62, -0.78)                   # light from the top left
-    BEV = 3.3
-    for y in range(H):
-        for x in range(W):
-            if not (x0 - 8 <= x <= x0 + total + 8 and 0 <= y <= 46):
-                continue
-            # coverage by supersampling
-            cov = 0
-            for sy in range(SS):
-                for sx in range(SS):
-                    if inside_depth(x + (sx + .5) / SS, y + (sy + .5) / SS) > 0:
-                        cov += 1
-            cov /= SS * SS
-            if cov > 0.5:
-                d = inside_depth(x + .5, y + .5)
-                e = 0.7
-                gx = (min(d, BEV) - min(inside_depth(x + .5 - e, y + .5), BEV)) - (min(inside_depth(x + .5 + e, y + .5), BEV) - min(d, BEV))
-                # gradient of the clamped height field (central difference), then Lambert-style shading
-                hx = (min(inside_depth(x + .5 + e, y + .5), BEV) - min(inside_depth(x + .5 - e, y + .5), BEV)) / (2 * e)
-                hy = (min(inside_depth(x + .5, y + .5 + e), BEV) - min(inside_depth(x + .5, y + .5 - e), BEV)) / (2 * e)
-                lum = 0.5 - 0.5 * (hx * light[0] + hy * light[1]) / 0.6    # 0 dark .. 1 bright on the bevel
-                if d < 0.9:
-                    idx = 1                                              # outline
-                elif d >= BEV - 0.2:
-                    idx = 4                                              # flat face (Copper gradient colour)
-                else:
-                    k = max(0.0, min(1.0, lum))
-                    idx = 2 if k < 0.25 else 3 if k < 0.45 else 5 if k < 0.7 else 6 if k < 0.9 else 7
-                img[y][x] = idx
+    # --- AMIGA: large 5x7 mask, bevel-lit and extruded.
+    word = 'AMIGA'
+    sc_big = 6
+    gap = 4
+    glyph_w, glyph_h = 5 * sc_big, 7 * sc_big
+    total = len(word) * glyph_w + (len(word) - 1) * gap
+    x0 = (W - total) // 2
+    y0 = 3
+    mask = set()
+    for i, ch in enumerate(word):
+        g = GLYPHS[ch]
+        ox = x0 + i * (glyph_w + gap)
+        for gy in range(7):
+            for gx in range(5):
+                if g[gy][gx] == '1':
+                    for yy in range(sc_big):
+                        for xx in range(sc_big):
+                            mask.add((ox + gx * sc_big + xx, y0 + gy * sc_big + yy))
+    for (x, y) in sorted(mask, reverse=True):
+        for off, col in ((5, 9), (3, 8)):
+            sx, sy = x + off, y + off
+            if 0 <= sx < W and 0 <= sy < H and (sx, sy) not in mask and img[sy][sx] == 0:
+                img[sy][sx] = col
+    for (x, y) in mask:
+        up = (x, y - 1) in mask
+        left = (x - 1, y) in mask
+        down = (x, y + 1) in mask
+        right = (x + 1, y) in mask
+        if not up or not left:
+            idx = 7
+        elif not down or not right:
+            idx = 2
+        else:
+            sheen = (x - x0) / max(1, total)
+            idx = 4 if 0.24 < sheen < 0.76 else 5
+            if (x + 2 * y) % 23 == 0:
+                idx = 6
+        if y in (y0, y0 + glyph_h - 1) or x in (x0, x0 + total - 1):
+            idx = 1
+        img[y][x] = idx
     # extrusion: two shadow copies behind, offset down-right, drawn only where nothing else is
     for off, col in ((4, 9), (2, 8)):
         for y in range(H - 1, -1, -1):
@@ -144,8 +150,8 @@ def build():
                     if img[y][x] == 0 or col == 8:
                         img[y][x] = col
 
-    # --- CRACKING SERVICE: chiselled 2x font with a drop shadow
-    text = 'CRACKING SERVICES AS'
+    # --- NAMETAMPLE A1200: chiselled 2x font with a drop shadow
+    text = 'NAMETAMPLE A1200'
     sc = 2
     tw = len(text) * 6 * sc - sc
     tx0, ty0 = (W - tw) // 2, 46

@@ -65,17 +65,17 @@ NBARS = 4
 
 def floor_base():
     """Static floor colour per row (a dark purple ramp) that the animated bars are drawn over."""
-    fl = [(0.0, 0x012), (1.0, 0x234)]
+    fl = [(0.0, 0x002), (0.45, 0x014), (1.0, 0x146)]
     return [ramp24(fl, i / (FLOOR_H - 1)) for i in range(FLOOR_H)]
 
 def bar_colors():
-    """NBARS bars of 8 rows each: a colour with a soft bright core (intensity 1-2-3-4-4-3-2-1 / 4), 24 bit."""
-    bases = [0x3FC, 0x6AF, 0xB6F, 0xF6C]            # teal, blue, violet, pink
-    prof = [1, 2, 3, 4, 4, 3, 2, 1]
+    """NBARS bars of 8 rows each: soft neon cores with a smoother 1-2-4-6-6-4-2-1 profile."""
+    bases = [0x4FE, 0x58F, 0xB6F, 0xF5B]            # teal, blue, violet, magenta
+    prof = [1, 2, 4, 6, 6, 4, 2, 1]
     out = []
     for base in bases:
         for pk in prof:
-            out.append(lerp24(c24(0x002), c24(base), pk / 4))
+            out.append(lerp24(c24(0x001), c24(base), pk / 6))
     return out
 
 MID_PALETTE = [0x001, 0xAAD, 0xFC5, 0xFC5, 0x779, 0xFFF, 0xFC5, 0xFC5,
@@ -103,8 +103,8 @@ def copper():
     # Logo band, y 8..71: a 16 colour picture whose palette is in the Copper header. Every row
     # recolours the background (COLOR00) and the face colour (COLOR04: a white-to-orange metal
     # gradient) and has a BPLCON1 move that UpdateWave rewrites every frame.
-    face = [(0.0, 0xFFF), (0.25, 0xFE8), (0.55, 0xFB3), (1.0, 0xE52)]
-    bg = [(0.0, 0x002), (1.0, 0x214)]
+    face = [(0.0, 0xFFF), (0.18, 0xDFF), (0.38, 0xFE8), (0.68, 0xFB3), (1.0, 0xE42)]
+    bg = [(0.0, 0x001), (0.55, 0x013), (1.0, 0x125)]
     for i in range(64):
         ent.append((8 + i, [('COLOR00', ramp(bg, i / 63)), ('COLOR04', ramp(face, max(0.0, min(1.0, (i - 4) / 36)))), ('BPLCON1', 0x88)]))
     ent.append((72, None))                                   # animated raster slot, then the wave reset
@@ -285,10 +285,23 @@ def recip_wire():
     vals = [0] * 150 + [int(round(220 * 256 / z)) for z in range(150, 416)]
     return '\n'.join('        dc.w ' + ','.join('%d' % v for v in vals[i:i + 16]) for i in range(0, 416, 16))
 
-PLASMA_STOPS = [(0.0, 0x001), (0.25, 0x024), (0.5, 0x148), (0.75, 0x3A8), (1.0, 0x7CB)]
+PLASMA_STOPS = [
+    (0.0, 0x001),
+    (0.16, 0x013),
+    (0.34, 0x046),
+    (0.52, 0x08B),
+    (0.70, 0x4DE),
+    (0.86, 0xB6F),
+    (1.0, 0xFE8),
+]
 def plasma_pal():
-    """192 dark-to-hot 24 bit colours the plasma indexes with (kept dim so stars and wireframes stay readable)."""
-    return [ramp24(PLASMA_STOPS, i / 191) for i in range(192)]
+    """192 aurora 24-bit colours with eased interpolation for smoother copper gradients."""
+    vals = []
+    for i in range(192):
+        t = i / 191
+        eased = t * t * (3 - 2 * t)
+        vals.append(ramp24(PLASMA_STOPS, eased))
+    return vals
 
 def sintab():
     vals = [int(round(127 * math.sin(2 * math.pi * k / 256))) for k in range(256)]
@@ -301,8 +314,8 @@ def aga_palette():
     """64 colours: logo (0-15), logo alt (16-23), sprites (24-35), background (36-47), effects (48-63)."""
     pal = [0x001] * 64
     # Logo palette: expanded 16-colour (0-15) + smooth transitions (16-23)
-    logo_base = [0x001, 0x100, 0x631, 0x963, 0xFC4, 0xFE9, 0xFFC, 0xFFF,
-                 0x424, 0x212, 0x246, 0x468, 0x6AC, 0xADF, 0xD42, 0xFFF]
+    logo_base = [0x001, 0x013, 0x245, 0x579, 0xFC4, 0xFE8, 0xDFF, 0xFFF,
+                 0x303, 0x112, 0x246, 0x36A, 0x6BE, 0xCFF, 0xF5B, 0xFFF]
     pal[0:16] = logo_base
     # Extra gradients for smooth shading
     pal[16:24] = [0x975, 0xA86, 0xB97, 0xCA8, 0xDB9, 0xECA, 0xFDB, 0xFFF]

@@ -103,8 +103,8 @@ def copper():
     # Logo band, y 8..71: a 16 colour picture whose palette is in the Copper header. Every row
     # recolours the background (COLOR00) and the face colour (COLOR04: a white-to-orange metal
     # gradient) and has a BPLCON1 move that UpdateWave rewrites every frame.
-    face = [(0.0, 0xEFF), (0.25, 0x9FD), (0.55, 0x3D9), (1.0, 0x59F)]
-    bg = [(0.0, 0x002), (1.0, 0x213)]
+    face = [(0.0, 0xFFF), (0.25, 0xFE8), (0.55, 0xFB3), (1.0, 0xE52)]
+    bg = [(0.0, 0x002), (1.0, 0x214)]
     for i in range(64):
         ent.append((8 + i, [('COLOR00', ramp(bg, i / 63)), ('COLOR04', ramp(face, max(0.0, min(1.0, (i - 4) / 36)))), ('BPLCON1', 0x88)]))
     ent.append((72, None))                                   # animated raster slot, then the wave reset
@@ -176,20 +176,34 @@ def wave_tab():
 
 # ---- hardware sprite balls --------------------------------------------------------------------
 BALL_SIZES = (16, 12, 8)             # near, mid, far; each drawn centred in a 16 pixel wide sprite
-SPR_PALETTE = [                      # three shades (dark, mid, bright) for each pair of sprites
-    [0x0A5, 0x3FA, 0xDFE],           # sprites 0,1: the nearest balls (green)
-    [0x609, 0xB4F, 0xEAF],           # violet
-    [0x046, 0x2AF, 0xBEF],           # blue
-    [0x123, 0x35A, 0x8BE]]           # sprites 6,7: the farthest balls
+SPR_PALETTE = [                      # three shades (shadow, lit, highlight) for each pair of sprites
+    [0x1B7, 0x5F9, 0xEFF],           # sprites 0,1: the nearest balls (green)
+    [0x73C, 0xC6F, 0xFDF],           # violet
+    [0x15B, 0x4BF, 0xDFF],           # blue
+    [0x236, 0x58B, 0xADF]]           # sprites 6,7: the farthest balls
 
-def ball_lines(size):
-    """size lines of (plane A word, plane B word): colour = A + 2*B, 0 transparent, shaded like a sphere
-    lit from the top left (1 dark, 2 mid, 3 bright)."""
+SPR_FRAMES = 8                       # rotation frames of the ball surface
+
+def _norm(v):
+    n = math.sqrt(sum(c * c for c in v))
+    return tuple(c / n for c in v)
+
+KEY = _norm((-0.5, -0.6, 0.62))      # key light: upper left, towards the viewer
+FILL = _norm((0.6, 0.5, 0.35))       # bounce light from lower right (the rim)
+BAYER = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]]
+
+def ball_lines(size, frame=0):
+    """size lines of (plane A word, plane B word): colour = A + 2*B, 0 transparent.
+    A sphere with a striped surface turning about a tilted axis (frame / SPR_FRAMES of a stripe
+    period), a diffuse key light, a tight specular highlight (colour 3), a bounce light that
+    separates the shadow side from the background and ordered dithering across the terminator
+    between the dark (1) and mid (2) shades."""
     out = []
     r = size / 2.0
-    L = (-0.5, -0.6, 0.62)
-    n = math.sqrt(sum(c * c for c in L))
-    L = tuple(c / n for c in L)
+    theta = math.pi * frame / SPR_FRAMES
+    tilt = 0.5
+    ct, st = math.cos(tilt), math.sin(tilt)
+    amp = 0.13 if size >= 12 else 0.07
     for y in range(size):
         a = b = 0
         for x in range(size):
@@ -198,8 +212,23 @@ def ball_lines(size):
             col = 0
             if d2 <= 1.0:
                 nz = math.sqrt(1 - d2)
-                lam = max(0.0, dx * L[0] + dy * L[1] + nz * L[2])
-                col = 3 if lam > 0.78 else 2 if lam > 0.38 else 1
+                n = (dx, dy, nz)
+                tx, ty = dx * ct + dy * st, -dx * st + dy * ct
+                lon = math.atan2(tx, nz) + theta
+                albedo = 0.55 if math.sin(2 * lon) > 0.25 else 1.0
+                if abs(ty) > 0.82:
+                    albedo = 0.55
+                dkey = max(0.0, sum(p * q for p, q in zip(n, KEY)))
+                dfill = max(0.0, sum(p * q for p, q in zip(n, FILL)))
+                rim = 0.75 * dfill * (1 - nz) ** 1.2
+                inten = 0.13 + albedo * dkey + rim
+                rz = 2 * dkey * nz - KEY[2]
+                spec = max(0.0, rz) ** 14
+                thr = 0.30 + (BAYER[y & 3][x & 3] / 15.0 - 0.5) * 2 * amp
+                if spec > 0.45 and dkey > 0:
+                    col = 3
+                else:
+                    col = 2 if inten > thr else 1
             bit = 15 - (x + (16 - size) // 2)
             a |= (col & 1) << bit
             b |= (col >> 1) << bit
@@ -208,9 +237,10 @@ def ball_lines(size):
 
 def balls():
     vals = []
-    for sz in BALL_SIZES:
-        for a, b in ball_lines(sz):
-            vals += [a, b]
+    for f in range(SPR_FRAMES):
+        for sz in BALL_SIZES:
+            for a, b in ball_lines(sz, f):
+                vals += [a, b]
     return vals
 
 RING_R = 70

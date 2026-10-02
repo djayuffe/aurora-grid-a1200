@@ -21,7 +21,8 @@ SCROLL_H        EQU 16
 
 NBALLS          EQU 8       ; hardware sprite ring
 SPR_BYTES       EQU 80      ; per page: header 4 + up to 16 lines of 4 + terminator 4, rounded
-SPR_PAGES       EQU NBALLS*3 ; one prebuilt page per sprite and ball size
+SPR_FRAMES      EQU 8       ; rotation frames of the ball surface (tools/gen_tables.py balls)
+SPR_PAGES       EQU NBALLS*3*SPR_FRAMES ; one prebuilt page per sprite, rotation frame and ball size
 RING_R          EQU 70
 RING_TILT       EQU 40      ; tilt of the ring plane (256 = a full turn)
 BALL_NEAR       EQU 285     ; distance below which a ball is drawn big (16 px)
@@ -52,7 +53,7 @@ TUN_Z0          EQU 210     ; depth of the nearest ring slot before the scroll o
 TUN_OX          EQU 26      ; sideways wander of the tunnel axis, world units
 TUN_OY          EQU 8       ; vertical wander
 OCTA_S          EQU 28      ; octahedron vertices are (+-28,0,0), (0,+-28,0), (0,0,+-28)
-WIRE_SWAY       EQU 64      ; sideways swing, pixels
+WIRE_SWAY       EQU 16      ; gentle sideways swing on top of the physics, pixels
 WIRE_ZOOM       EQU 18      ; breathing, distance units
 
 ; Runtime pointer slots. AllocChipMem copies the whole data_c block into chip
@@ -582,16 +583,7 @@ InitStars:
         lea     stars,a2
         moveq   #NSTARS-1,d7
 .is:
-        bsr     Rand
-        andi.w  #511,d0
-        subi.w  #255,d0
-        move.w  d0,(a2)                    ; x -255..256
-        bsr     Rand
-        andi.w  #255,d0
-        subi.w  #128,d0
-        muls    #5,d0
-        asr.l   #3,d0
-        move.w  d0,2(a2)                   ; y -80..79
+        bsr     StarLane
         bsr     Rand
         andi.w  #255,d0
         mulu    #ZRANGE,d0
@@ -603,6 +595,42 @@ InitStars:
         clr.b   9(a2)                      ; nothing drawn yet
         lea     STAR_SIZE(a2),a2
         dbra    d7,.is
+        rts
+
+; New lane for the star at a2: x -255..256, y -80..79, but never inside the central dead zone
+; (|x| < 44 and |y| < 26): a star there sits next to the vanishing point and crawls for seconds,
+; which looks stuck, so it is pushed out to |x| = 44 or more.
+StarLane:
+        bsr     Rand
+        andi.w  #511,d0
+        subi.w  #255,d0
+        move.w  d0,(a2)
+        bsr     Rand
+        andi.w  #255,d0
+        subi.w  #128,d0
+        muls    #5,d0
+        asr.l   #3,d0
+        move.w  d0,2(a2)
+        move.w  (a2),d1
+        move.w  d1,d2
+        bpl     .px
+        neg.w   d2
+.px:
+        cmp.w   #44,d2
+        bge     .done
+        move.w  2(a2),d4
+        bpl     .py
+        neg.w   d4
+.py:
+        cmp.w   #26,d4
+        bge     .done
+        tst.w   d1
+        bmi     .left
+        addi.w  #44,(a2)
+        rts
+.left:
+        subi.w  #44,(a2)
+.done:
         rts
 
 UpdateStars:
@@ -640,16 +668,7 @@ UpdateStars:
         cmp.w   #ZMIN,d3
         bge     .zok
         addi.w  #ZRANGE,d3                 ; back to the far end, new lane
-        bsr     Rand
-        andi.w  #511,d0
-        subi.w  #255,d0
-        move.w  d0,(a2)
-        bsr     Rand
-        andi.w  #255,d0
-        subi.w  #128,d0
-        muls    #5,d0
-        asr.l   #3,d0
-        move.w  d0,2(a2)
+        bsr     StarLane
 .zok:
         move.w  d3,4(a2)
         move.w  d3,d6
@@ -808,14 +827,15 @@ InitSprites:
         moveq   #NBALLS-1,d7
 .sprite:
         lea     ball_bitmaps,a2
+        moveq   #SPR_FRAMES-1,d6
+.frame:
         moveq   #16,d2
         bsr     .page
-        lea     64+ball_bitmaps,a2
         moveq   #12,d2
         bsr     .page
-        lea     112+ball_bitmaps,a2
         moveq   #8,d2
         bsr     .page
+        dbra    d6,.frame
         dbra    d7,.sprite
         rts
 .page:                                     ; a1 = page, a2 = bitmap, d2 = lines; a1 advances one page
@@ -963,6 +983,14 @@ UpdateSprites:
         add.w   d0,d0
         lea     ball_order,a1
         move.w  0(a1,d0.w),d6              ; ball number
+        move.w  frame_no,d1
+        lsr.w   #2,d1                      ; a turn of the surface pattern takes 8 * 4 frames
+        move.w  d6,d2
+        add.w   d2,d2
+        add.w   d6,d2                      ; 3 * ball number: the balls do not spin in step
+        add.w   d2,d1
+        andi.w  #SPR_FRAMES-1,d1
+        move.w  d1,-(sp)
         move.w  d6,d0
         add.w   d0,d0
         lea     ball_zc,a1
@@ -1011,10 +1039,13 @@ UpdateSprites:
 .v1:
         andi.w  #1,d3
         or.w    d3,d5                      ; SPRxCTL
-; page = sprites + (rank * 3 + size class) * SPR_BYTES, class 0 = 16 px, 1 = 12, 2 = 8
+; page = sprites + ((rank * SPR_FRAMES + spin frame) * 3 + size class) * SPR_BYTES, class 0 = 16 px, 1 = 12, 2 = 8
         move.w  d7,d0
+        lsl.w   #3,d0                      ; rank * SPR_FRAMES
+        add.w   (sp)+,d0                   ; + this ball's spin frame
+        move.w  d0,d1
         add.w   d0,d0
-        add.w   d7,d0                      ; rank * 3
+        add.w   d1,d0                      ; * 3
         add.w   d6,d0                      ; + size class
         mulu    #SPR_BYTES,d0
         move.l  ptr_sprites,a1
@@ -1066,7 +1097,9 @@ DrawWire:
         move.l  a1,BLTDPTH(a6)
         move.w  #(MID_H<<6)|(SCREEN_W_BYTES/2),BLTSIZE(a6)
 
+        bsr     UpdatePhysics
         move.w  sec_spin,d0
+        add.w   phys_spin,d0
         add.w   d0,ang_x
         add.w   d0,ang_z
         move.w  d0,d1
@@ -1083,6 +1116,13 @@ DrawWire:
         asr.l   #7,d0
         addi.w  #MID_CX,d0
         move.w  d0,wire_cx
+        move.w  phys_x,d1
+        asr.w   #8,d1
+        add.w   d1,wire_cx
+        move.w  phys_y,d1
+        asr.w   #8,d1
+        addi.w  #MID_CY,d1
+        move.w  d1,wire_cy
         move.w  ang_y,d0
         andi.w  #255,d0
         add.w   d0,d0
@@ -1090,6 +1130,9 @@ DrawWire:
         muls    #WIRE_ZOOM,d0
         asr.l   #7,d0
         addi.w  #WIRE_ZOFF,d0
+        move.w  phys_z,d1
+        asr.w   #8,d1
+        add.w   d1,d0
         move.w  d0,wire_zoff
         lea     proj,a3
 ; Cube: angles (x, y, z).
@@ -1100,6 +1143,7 @@ DrawWire:
         lea     verts,a1
         moveq   #8-1,d7
         move.w  sec_cube,d6
+        sub.w   phys_squash,d6
         bsr     TransformVerts
 ; Octahedron turns the other way.
         move.w  ang_z,d0
@@ -1111,6 +1155,7 @@ DrawWire:
         bsr     CalcMatrix
         moveq   #6-1,d7
         move.w  sec_octa,d6
+        sub.w   phys_squash,d6
         bsr     TransformVerts             ; a1 continues at the octahedron vertices
 ; Inner cube: the cube's vertex table again, small, tumbling on its own axes.
         move.w  ang_y,d0
@@ -1122,6 +1167,7 @@ DrawWire:
         bsr     CalcMatrix
         moveq   #12-1,d7                   ; a1 continues at the cuboctahedron vertices
         move.w  sec_inner,d6
+        sub.w   phys_squash,d6
         bsr     TransformVerts
         cmp.w   #8,sec_tun
         ble     .tun_hidden
@@ -1376,6 +1422,177 @@ TunnelVerts:
         blo     .slot
         rts
 
+; Physics for the wireframe models. Every kick drum row (row & 7 = 0) throws the models sideways
+; (alternating), up and away from the eye; gravity pulls them back, the walls and the floor
+; bounce them (restitution 3/4) and a hard landing squashes them for a few frames. A snare row
+; and each kick add a spin boost that decays. Positions and speeds are 8.8 fixed point. The
+; walls shrink with the biggest object: the blitter has no clipping, and a line outside the
+; 120 row band would be drawn over the logo or the scroller.
+UpdatePhysics:
+        move.w  sec_cube,d0
+        cmp.w   sec_octa,d0
+        bge     .m1
+        move.w  sec_octa,d0
+.m1:
+        cmp.w   sec_inner,d0
+        bge     .m2
+        move.w  sec_inner,d0
+.m2:
+        mulu    #91,d0
+        lsr.l   #6,d0                      ; projected extent, about 1.42 * size
+        move.w  #120-WIRE_SWAY,d1
+        sub.w   d0,d1
+        bge     .xok
+        moveq   #0,d1
+.xok:
+        move.w  d1,phys_xmax
+        moveq   #56,d1
+        sub.w   d0,d1
+        bge     .yok
+        moveq   #0,d1
+.yok:
+        move.w  d1,phys_ymax
+; --- beat
+        moveq   #0,d0
+        move.b  mod_row,d0
+        cmp.b   phys_row,d0
+        beq     .nobeat
+        move.b  d0,phys_row
+        andi.w  #7,d0
+        beq     .kick
+        cmp.w   #4,d0
+        bne     .nobeat
+        addq.w  #3,phys_spin               ; snare
+        bra     .nobeat
+.kick:
+        move.w  #$0300,d1
+        tst.b   phys_dir
+        beq     .dir
+        neg.w   d1
+.dir:
+        not.b   phys_dir
+        add.w   d1,phys_vx
+        addi.w  #$0240,phys_vz
+        subi.w  #$0300,phys_vy
+        addq.w  #5,phys_spin
+.nobeat:
+; --- x: weak spring to the middle, damping, bouncing walls
+        move.w  phys_x,d0
+        move.w  phys_vx,d2
+        move.w  d0,d1
+        asr.w   #8,d1
+        asr.w   #1,d1                      ; x >> 9: a spring of about 0.002 px/frame^2 per px
+        sub.w   d1,d2
+        move.w  d2,d1
+        asr.w   #7,d1
+        sub.w   d1,d2
+        add.w   d2,d0
+        move.w  phys_xmax,d3
+        lsl.w   #8,d3
+        cmp.w   d3,d0
+        ble     .xl
+        move.w  d3,d0
+        tst.w   d2
+        ble     .xl
+        move.w  d2,d1
+        asr.w   #2,d1
+        sub.w   d1,d2
+        neg.w   d2
+.xl:
+        neg.w   d3
+        cmp.w   d3,d0
+        bge     .xd
+        move.w  d3,d0
+        tst.w   d2
+        bge     .xd
+        move.w  d2,d1
+        asr.w   #2,d1
+        sub.w   d1,d2
+        neg.w   d2
+.xd:
+        move.w  d0,phys_x
+        move.w  d2,phys_vx
+; --- y: gravity, floor and ceiling inside the room the biggest object leaves
+        move.w  phys_y,d0
+        move.w  phys_vy,d2
+        addi.w  #$0030,d2
+        add.w   d2,d0
+        move.w  phys_ymax,d3
+        lsl.w   #8,d3
+        cmp.w   d3,d0
+        ble     .yc
+        move.w  d3,d0
+        tst.w   d2
+        ble     .yc
+        move.w  d2,d1
+        asr.w   #1,d1
+        move.w  d2,d4
+        asr.w   #3,d4
+        add.w   d4,d1
+        move.w  d1,d2
+        neg.w   d2                         ; -(5/8 v)
+        cmpi.w  #-$0100,d2
+        bgt     .ystill
+        move.w  #6,phys_squash
+        bra     .yc
+.ystill:
+        moveq   #0,d2
+.yc:
+        neg.w   d3
+        cmp.w   d3,d0
+        bge     .yd
+        move.w  d3,d0
+        tst.w   d2
+        bge     .yd
+        neg.w   d2
+        asr.w   #1,d2
+.yd:
+        move.w  d0,phys_y
+        move.w  d2,phys_vy
+; --- z: gravity back towards the eye; a hard landing squashes the models
+        move.w  phys_z,d0
+        move.w  phys_vz,d2
+        subi.w  #$0034,d2
+        add.w   d2,d0
+        bge     .zk
+        moveq   #0,d0
+        tst.w   d2
+        bpl     .zk
+        cmpi.w  #-$0180,d2
+        bgt     .zrest
+        move.w  #6,phys_squash
+.zrest:
+        move.w  d2,d1
+        asr.w   #2,d1
+        sub.w   d1,d2
+        neg.w   d2                         ; -(3/4 v)
+        cmpi.w  #$0120,d2
+        bge     .zk
+        moveq   #0,d2
+.zk:
+        cmpi.w  #$5000,d0
+        ble     .zm
+        move.w  #$5000,d0
+        moveq   #0,d2
+.zm:
+        move.w  d0,phys_z
+        move.w  d2,phys_vz
+; --- decay squash and spin
+        move.w  frame_no,d0
+        btst    #0,d0
+        bne     .nosq
+        tst.w   phys_squash
+        ble     .nosq
+        subq.w  #1,phys_squash
+.nosq:
+        andi.w  #3,d0
+        bne     .nosp
+        tst.w   phys_spin
+        ble     .nosp
+        subq.w  #1,phys_spin
+.nosp:
+        rts
+
 ; (d0.w * d1.w) >> 7, result in d0. Used for the 7 bit fixed point matrix.
 Mul7:
         muls    d1,d0
@@ -1559,7 +1776,7 @@ TransformVerts:
         add.w   wire_cx,d3
         muls    d5,d4
         asr.l   #8,d4
-        addi.w  #MID_CY,d4
+        add.w   wire_cy,d4
         move.w  d3,(a3)+
         move.w  d4,(a3)+
         dbra    d7,.tv
@@ -1674,6 +1891,20 @@ ball_order:  ds.w NBALLS        ; ball numbers, nearest first
 frame_no:    dc.w 0
 wire_cx:     dc.w MID_CX
 wire_zoff:   dc.w WIRE_ZOFF
+wire_cy:     dc.w MID_CY
+phys_x:      dc.w 0                 ; 8.8 fixed point offsets and speeds of the wireframe group
+phys_vx:     dc.w 0
+phys_y:      dc.w 0
+phys_vy:     dc.w 0
+phys_z:      dc.w 0
+phys_vz:     dc.w 0
+phys_squash: dc.w 0
+phys_spin:   dc.w 0
+phys_xmax:   dc.w 0
+phys_ymax:   dc.w 0
+phys_row:    dc.b $FF
+phys_dir:    dc.b 0
+        even
 wire_front:  dc.w 0             ; index of the wireframe buffer being displayed
 ang_x:       dc.w 0
 ang_y:       dc.w 0
@@ -1792,7 +2023,7 @@ gfx_name:    dc.b "graphics.library",0
         even
 
 scroll_text:
-        dc.b "   AURORA GRID PRESENTS A NIGHT SKY DEMO FOR THE AMIGA 1200 - COPPER PLASMA - WIREFRAME TUNNEL - CUBE OCTAHEDRON AND CUBOCTAHEDRON - FOUR CHANNEL PAULA MUSIC IN D MINOR - GREETINGS TO EVERYONE WHO KEEPS THE OLD MACHINES SINGING - SEE YOU UNDER THE AURORA!   ",0
+        dc.b "   UBER CRACKING SERVICES AS PRESENTS AURORA GRID - A NIGHT SKY DEMO FOR THE AMIGA 1200 - 24 BIT COPPER PLASMA - WIREFRAME TUNNEL - BOUNCING CUBE OCTAHEDRON AND CUBOCTAHEDRON - SPINNING LIT BALLS - FOUR CHANNEL PAULA MUSIC IN D MINOR - GREETINGS TO EVERYONE WHO KEEPS THE OLD MACHINES SINGING!   ",0
         even
 
 raster_colors:
@@ -1876,16 +2107,78 @@ ring_tab:
 
 ; Hardware sprite balls: 16, 12 and 8 line bitmaps (planes A, B per line), tools/gen_tables.py balls.
 ball_bitmaps:
-        dc.w $700,$7E0,$1F88,$1FF0,$3F84,$3FF8,$7F86,$7FF8
-        dc.w $7F86,$7FF8,$7F07,$FFF8,$7E0F,$FFF0,$7C1F,$FFE0
-        dc.w $01F,$FFE0,$03F,$FFC0,$80FF,$7F00,$3FE,$7C00
-        dc.w $7FFE,$000,$3FFC,$000,$1FF8,$000,$7E0,$000
-        dc.w $300,$3C0,$F90,$FE0,$1F88,$1FF0,$1F08,$1FF0
-        dc.w $3F1C,$3FE0,$1C1C,$3FE0,$03C,$3FC0,$07C,$3F80
-        dc.w $1F8,$1E00,$1FF8,$000,$FF0,$000,$3C0,$000
-        dc.w $300,$3C0,$7A0,$7C0,$F30,$FC0,$E30,$FC0
-        dc.w $070,$F80,$0F0,$F00,$7E0,$000,$3C0,$000
-
+        dc.w $000,$7E0,$008,$1FF0,$004,$3FF8,$002,$7FFC
+        dc.w $600,$7FFE,$E02,$FFFD,$404,$FFFB,$00A,$FFF5
+        dc.w $014,$FFEB,$02A,$FFD5,$054,$FFAB,$0F8,$7F06
+        dc.w $4150,$3EAE,$23A0,$1C5C,$1500,$AF8,$200,$5E0
+        dc.w $000,$3C0,$000,$FF0,$000,$1FF8,$208,$1FF0
+        dc.w $600,$3FFC,$008,$3FF4,$010,$3FEC,$0B8,$3F44
+        dc.w $050,$1FA8,$0E0,$1F18,$500,$AF0,$200,$1C0
+        dc.w $000,$3C0,$000,$7E0,$300,$FF0,$020,$FD0
+        dc.w $000,$FF0,$0E0,$F10,$5C0,$220,$200,$1C0
+        dc.w $000,$7E0,$008,$1FF0,$004,$3FF8,$002,$7FFC
+        dc.w $600,$7FFE,$E02,$FFFD,$404,$FFFB,$00A,$FFF5
+        dc.w $014,$FFEB,$02A,$FFD5,$054,$FFAB,$AF8,$7506
+        dc.w $4150,$3EAE,$2BA0,$145C,$1500,$AF8,$200,$5E0
+        dc.w $000,$3C0,$000,$FF0,$000,$1FF8,$208,$1FF0
+        dc.w $600,$3FFC,$008,$3FF4,$010,$3FEC,$0B8,$3F44
+        dc.w $050,$1FA8,$2E0,$1D18,$500,$AF0,$200,$1C0
+        dc.w $000,$3C0,$000,$7E0,$300,$FF0,$020,$FD0
+        dc.w $000,$FF0,$0E0,$F10,$5C0,$220,$200,$1C0
+        dc.w $000,$7E0,$008,$1FF0,$004,$3FF8,$002,$7FFC
+        dc.w $600,$7FFE,$E02,$FFFD,$404,$FFFB,$00A,$FFF5
+        dc.w $010,$FFEF,$02A,$FFD5,$054,$FFAB,$2AF8,$5506
+        dc.w $4150,$3EAE,$2BA0,$145C,$1500,$AF8,$200,$5E0
+        dc.w $000,$3C0,$000,$FF0,$000,$1FF8,$200,$1FF8
+        dc.w $600,$3FFC,$008,$3FF4,$010,$3FEC,$0B8,$3F44
+        dc.w $050,$1FA8,$AE0,$1518,$500,$AF0,$200,$1C0
+        dc.w $000,$3C0,$000,$7E0,$300,$FF0,$020,$FD0
+        dc.w $000,$FF0,$0E0,$F10,$5C0,$220,$200,$1C0
+        dc.w $000,$7E0,$008,$1FF0,$004,$3FF8,$002,$7FFC
+        dc.w $600,$7FFE,$E02,$FFFD,$400,$FFFF,$002,$FFFD
+        dc.w $000,$FFFF,$00A,$FFF5,$014,$FFEB,$2AB8,$5546
+        dc.w $4150,$3EAE,$2AA0,$155C,$1500,$AF8,$200,$5E0
+        dc.w $000,$3C0,$000,$FF0,$000,$1FF8,$200,$1FF8
+        dc.w $600,$3FFC,$008,$3FF4,$000,$3FFC,$0B8,$3F44
+        dc.w $010,$1FE8,$AE0,$1518,$500,$AF0,$200,$1C0
+        dc.w $000,$3C0,$000,$7E0,$300,$FF0,$000,$FF0
+        dc.w $000,$FF0,$020,$FD0,$540,$2A0,$200,$1C0
+        dc.w $000,$7E0,$008,$1FF0,$004,$3FF8,$002,$7FFC
+        dc.w $600,$7FFE,$E02,$FFFD,$400,$FFFF,$002,$FFFD
+        dc.w $000,$FFFF,$00A,$FFF5,$014,$FFEB,$28B8,$5746
+        dc.w $4050,$3FAE,$22A0,$1D5C,$1500,$AF8,$200,$5E0
+        dc.w $000,$3C0,$000,$FF0,$000,$1FF8,$200,$1FF8
+        dc.w $600,$3FFC,$008,$3FF4,$000,$3FFC,$2038,$1FC4
+        dc.w $010,$1FE8,$8E0,$1718,$500,$AF0,$200,$1C0
+        dc.w $000,$3C0,$000,$7E0,$300,$FF0,$000,$FF0
+        dc.w $000,$FF0,$020,$FD0,$440,$3A0,$200,$1C0
+        dc.w $000,$7E0,$008,$1FF0,$004,$3FF8,$002,$7FFC
+        dc.w $600,$7FFE,$E02,$FFFD,$400,$FFFF,$002,$FFFD
+        dc.w $000,$FFFF,$00A,$FFF5,$014,$FFEB,$20B8,$5F46
+        dc.w $4050,$3FAE,$22A0,$1D5C,$1500,$AF8,$200,$5E0
+        dc.w $000,$3C0,$000,$FF0,$000,$1FF8,$200,$1FF8
+        dc.w $600,$3FFC,$008,$3FF4,$000,$3FFC,$2038,$1FC4
+        dc.w $010,$1FE8,$0E0,$1F18,$500,$AF0,$200,$1C0
+        dc.w $000,$3C0,$000,$7E0,$300,$FF0,$000,$FF0
+        dc.w $000,$FF0,$020,$FD0,$440,$3A0,$200,$1C0
+        dc.w $000,$7E0,$008,$1FF0,$004,$3FF8,$002,$7FFC
+        dc.w $600,$7FFE,$E02,$FFFD,$400,$FFFF,$002,$FFFD
+        dc.w $000,$FFFF,$00A,$FFF5,$014,$FFEB,$0B8,$7F46
+        dc.w $4050,$3FAE,$22A0,$1D5C,$1500,$AF8,$200,$5E0
+        dc.w $000,$3C0,$000,$FF0,$000,$1FF8,$200,$1FF8
+        dc.w $600,$3FFC,$008,$3FF4,$000,$3FFC,$2038,$1FC4
+        dc.w $010,$1FE8,$0E0,$1F18,$500,$AF0,$200,$1C0
+        dc.w $000,$3C0,$000,$7E0,$300,$FF0,$000,$FF0
+        dc.w $000,$FF0,$020,$FD0,$440,$3A0,$200,$1C0
+        dc.w $000,$7E0,$008,$1FF0,$004,$3FF8,$002,$7FFC
+        dc.w $600,$7FFE,$E02,$FFFD,$404,$FFFB,$002,$FFFD
+        dc.w $004,$FFFB,$00A,$FFF5,$014,$FFEB,$0B8,$7F46
+        dc.w $4050,$3FAE,$22A0,$1D5C,$1500,$AF8,$200,$5E0
+        dc.w $000,$3C0,$000,$FF0,$000,$1FF8,$208,$1FF0
+        dc.w $600,$3FFC,$008,$3FF4,$010,$3FEC,$038,$3FC4
+        dc.w $010,$1FE8,$0E0,$1F18,$500,$AF0,$200,$1C0
+        dc.w $000,$3C0,$000,$7E0,$300,$FF0,$020,$FD0
+        dc.w $000,$FF0,$060,$F90,$440,$3A0,$200,$1C0
 ; Wavy logo values (tools/gen_tables.py wave_tab).
 wave_tab:
         dc.w $088,$088,$088,$088,$088,$088,$088,$099,$099,$099,$099,$099,$099,$099,$0AA,$0AA
@@ -2018,10 +2311,10 @@ cop_bpl1:
         dc.w BPL4PTH,0,BPL4PTL,0
 ; The logo's 16 colour palette (tools/gen_tables.py palette); the Copper reloads a
 ; different palette below the logo for the stars and objects.
-        dc.w COLOR00,$002,COLOR01,$021,COLOR02,$064,COLOR03,$0A8
-        dc.w COLOR04,$4FC,COLOR05,$8FD,COLOR06,$CFE,COLOR07,$FFF
-        dc.w COLOR08,$315,COLOR09,$103,COLOR10,$236,COLOR11,$458
-        dc.w COLOR12,$7AC,COLOR13,$BDF,COLOR14,$F5C,COLOR15,$FFF
+        dc.w COLOR00,$001,COLOR01,$100,COLOR02,$631,COLOR03,$963
+        dc.w COLOR04,$FC4,COLOR05,$FE9,COLOR06,$FFC,COLOR07,$FFF
+        dc.w COLOR08,$424,COLOR09,$212,COLOR10,$246,COLOR11,$468
+        dc.w COLOR12,$6AC,COLOR13,$ADF,COLOR14,$D42,COLOR15,$FFF
 ; Hardware sprites: eight pointer pairs (the Copper reloads them every frame; PatchSprites
 ; fills in the runtime addresses once) and the colours of the four sprite pairs.
 cop_spr:
@@ -2033,79 +2326,79 @@ cop_spr:
         dc.w SPR5PTH,0,SPR5PTL,0
         dc.w SPR6PTH,0,SPR6PTL,0
         dc.w SPR7PTH,0,SPR7PTL,0
-        dc.w COLOR17,$0A5,COLOR18,$3FA,COLOR19,$DFE,COLOR21,$609
-        dc.w COLOR22,$B4F,COLOR23,$EAF,COLOR25,$046,COLOR26,$2AF
-        dc.w COLOR27,$BEF,COLOR29,$123,COLOR30,$35A,COLOR31,$8BE
+        dc.w COLOR17,$1B7,COLOR18,$5F9,COLOR19,$EFF,COLOR21,$73C
+        dc.w COLOR22,$C6F,COLOR23,$FDF,COLOR25,$15B,COLOR26,$4BF
+        dc.w COLOR27,$DFF,COLOR29,$236,COLOR30,$58B,COLOR31,$ADF
 
 ; Colour work per raster line (tools/gen_tables.py copper). In the logo band COLOR00 and
 ; COLOR04 get a gradient on every row; below it the palette is reloaded: COLOR01 is the
 ; mid-distance star, COLOR04/05 the far and near stars, and any index with bitplane 1 or 3
 ; set belongs to the 3D objects, so an object always hides the stars behind it.
 cop_wave:                                   ; 64 rows, 16 bytes each (BPLCON1 value at +14)
-        dc.w $3401,$FFFE,COLOR00,$0002,COLOR04,$0EFF,BPLCON1,$0088
-        dc.w $3501,$FFFE,COLOR00,$0002,COLOR04,$0EFF,BPLCON1,$0088
-        dc.w $3601,$FFFE,COLOR00,$0002,COLOR04,$0EFF,BPLCON1,$0088
-        dc.w $3701,$FFFE,COLOR00,$0002,COLOR04,$0EFF,BPLCON1,$0088
-        dc.w $3801,$FFFE,COLOR00,$0002,COLOR04,$0EFF,BPLCON1,$0088
-        dc.w $3901,$FFFE,COLOR00,$0002,COLOR04,$0DFF,BPLCON1,$0088
-        dc.w $3A01,$FFFE,COLOR00,$0002,COLOR04,$0DFF,BPLCON1,$0088
-        dc.w $3B01,$FFFE,COLOR00,$0002,COLOR04,$0CFE,BPLCON1,$0088
-        dc.w $3C01,$FFFE,COLOR00,$0002,COLOR04,$0CFE,BPLCON1,$0088
-        dc.w $3D01,$FFFE,COLOR00,$0002,COLOR04,$0BFE,BPLCON1,$0088
-        dc.w $3E01,$FFFE,COLOR00,$0002,COLOR04,$0BFE,BPLCON1,$0088
-        dc.w $3F01,$FFFE,COLOR00,$0002,COLOR04,$0AFD,BPLCON1,$0088
-        dc.w $4001,$FFFE,COLOR00,$0002,COLOR04,$0AFD,BPLCON1,$0088
-        dc.w $4101,$FFFE,COLOR00,$0002,COLOR04,$09FD,BPLCON1,$0088
-        dc.w $4201,$FFFE,COLOR00,$0002,COLOR04,$08FD,BPLCON1,$0088
-        dc.w $4301,$FFFE,COLOR00,$0002,COLOR04,$08FC,BPLCON1,$0088
-        dc.w $4401,$FFFE,COLOR00,$0102,COLOR04,$07EC,BPLCON1,$0088
-        dc.w $4501,$FFFE,COLOR00,$0102,COLOR04,$07EC,BPLCON1,$0088
-        dc.w $4601,$FFFE,COLOR00,$0102,COLOR04,$06EB,BPLCON1,$0088
-        dc.w $4701,$FFFE,COLOR00,$0102,COLOR04,$06EB,BPLCON1,$0088
-        dc.w $4801,$FFFE,COLOR00,$0102,COLOR04,$05EA,BPLCON1,$0088
-        dc.w $4901,$FFFE,COLOR00,$0102,COLOR04,$05EA,BPLCON1,$0088
-        dc.w $4A01,$FFFE,COLOR00,$0102,COLOR04,$04DA,BPLCON1,$0088
-        dc.w $4B01,$FFFE,COLOR00,$0102,COLOR04,$03D9,BPLCON1,$0088
-        dc.w $4C01,$FFFE,COLOR00,$0102,COLOR04,$03D9,BPLCON1,$0088
-        dc.w $4D01,$FFFE,COLOR00,$0102,COLOR04,$03D9,BPLCON1,$0088
-        dc.w $4E01,$FFFE,COLOR00,$0102,COLOR04,$03CA,BPLCON1,$0088
-        dc.w $4F01,$FFFE,COLOR00,$0102,COLOR04,$03CA,BPLCON1,$0088
-        dc.w $5001,$FFFE,COLOR00,$0102,COLOR04,$04CB,BPLCON1,$0088
-        dc.w $5101,$FFFE,COLOR00,$0102,COLOR04,$04CB,BPLCON1,$0088
-        dc.w $5201,$FFFE,COLOR00,$0102,COLOR04,$04BB,BPLCON1,$0088
-        dc.w $5301,$FFFE,COLOR00,$0102,COLOR04,$04BC,BPLCON1,$0088
-        dc.w $5401,$FFFE,COLOR00,$0113,COLOR04,$04BC,BPLCON1,$0088
-        dc.w $5501,$FFFE,COLOR00,$0113,COLOR04,$04BC,BPLCON1,$0088
-        dc.w $5601,$FFFE,COLOR00,$0113,COLOR04,$04AD,BPLCON1,$0088
-        dc.w $5701,$FFFE,COLOR00,$0113,COLOR04,$04AD,BPLCON1,$0088
-        dc.w $5801,$FFFE,COLOR00,$0113,COLOR04,$05AE,BPLCON1,$0088
-        dc.w $5901,$FFFE,COLOR00,$0113,COLOR04,$05AE,BPLCON1,$0088
-        dc.w $5A01,$FFFE,COLOR00,$0113,COLOR04,$059E,BPLCON1,$0088
-        dc.w $5B01,$FFFE,COLOR00,$0113,COLOR04,$059F,BPLCON1,$0088
-        dc.w $5C01,$FFFE,COLOR00,$0113,COLOR04,$059F,BPLCON1,$0088
-        dc.w $5D01,$FFFE,COLOR00,$0113,COLOR04,$059F,BPLCON1,$0088
-        dc.w $5E01,$FFFE,COLOR00,$0113,COLOR04,$059F,BPLCON1,$0088
-        dc.w $5F01,$FFFE,COLOR00,$0113,COLOR04,$059F,BPLCON1,$0088
-        dc.w $6001,$FFFE,COLOR00,$0113,COLOR04,$059F,BPLCON1,$0088
-        dc.w $6101,$FFFE,COLOR00,$0113,COLOR04,$059F,BPLCON1,$0088
-        dc.w $6201,$FFFE,COLOR00,$0113,COLOR04,$059F,BPLCON1,$0088
-        dc.w $6301,$FFFE,COLOR00,$0113,COLOR04,$059F,BPLCON1,$0088
-        dc.w $6401,$FFFE,COLOR00,$0213,COLOR04,$059F,BPLCON1,$0088
-        dc.w $6501,$FFFE,COLOR00,$0213,COLOR04,$059F,BPLCON1,$0088
-        dc.w $6601,$FFFE,COLOR00,$0213,COLOR04,$059F,BPLCON1,$0088
-        dc.w $6701,$FFFE,COLOR00,$0213,COLOR04,$059F,BPLCON1,$0088
-        dc.w $6801,$FFFE,COLOR00,$0213,COLOR04,$059F,BPLCON1,$0088
-        dc.w $6901,$FFFE,COLOR00,$0213,COLOR04,$059F,BPLCON1,$0088
-        dc.w $6A01,$FFFE,COLOR00,$0213,COLOR04,$059F,BPLCON1,$0088
-        dc.w $6B01,$FFFE,COLOR00,$0213,COLOR04,$059F,BPLCON1,$0088
-        dc.w $6C01,$FFFE,COLOR00,$0213,COLOR04,$059F,BPLCON1,$0088
-        dc.w $6D01,$FFFE,COLOR00,$0213,COLOR04,$059F,BPLCON1,$0088
-        dc.w $6E01,$FFFE,COLOR00,$0213,COLOR04,$059F,BPLCON1,$0088
-        dc.w $6F01,$FFFE,COLOR00,$0213,COLOR04,$059F,BPLCON1,$0088
-        dc.w $7001,$FFFE,COLOR00,$0213,COLOR04,$059F,BPLCON1,$0088
-        dc.w $7101,$FFFE,COLOR00,$0213,COLOR04,$059F,BPLCON1,$0088
-        dc.w $7201,$FFFE,COLOR00,$0213,COLOR04,$059F,BPLCON1,$0088
-        dc.w $7301,$FFFE,COLOR00,$0213,COLOR04,$059F,BPLCON1,$0088
+        dc.w $3401,$FFFE,COLOR00,$0002,COLOR04,$0FFF,BPLCON1,$0088
+        dc.w $3501,$FFFE,COLOR00,$0002,COLOR04,$0FFF,BPLCON1,$0088
+        dc.w $3601,$FFFE,COLOR00,$0002,COLOR04,$0FFF,BPLCON1,$0088
+        dc.w $3701,$FFFE,COLOR00,$0002,COLOR04,$0FFF,BPLCON1,$0088
+        dc.w $3801,$FFFE,COLOR00,$0002,COLOR04,$0FFF,BPLCON1,$0088
+        dc.w $3901,$FFFE,COLOR00,$0002,COLOR04,$0FFE,BPLCON1,$0088
+        dc.w $3A01,$FFFE,COLOR00,$0002,COLOR04,$0FFD,BPLCON1,$0088
+        dc.w $3B01,$FFFE,COLOR00,$0002,COLOR04,$0FFD,BPLCON1,$0088
+        dc.w $3C01,$FFFE,COLOR00,$0002,COLOR04,$0FFC,BPLCON1,$0088
+        dc.w $3D01,$FFFE,COLOR00,$0002,COLOR04,$0FEB,BPLCON1,$0088
+        dc.w $3E01,$FFFE,COLOR00,$0002,COLOR04,$0FEA,BPLCON1,$0088
+        dc.w $3F01,$FFFE,COLOR00,$0002,COLOR04,$0FEA,BPLCON1,$0088
+        dc.w $4001,$FFFE,COLOR00,$0002,COLOR04,$0FE9,BPLCON1,$0088
+        dc.w $4101,$FFFE,COLOR00,$0002,COLOR04,$0FE8,BPLCON1,$0088
+        dc.w $4201,$FFFE,COLOR00,$0002,COLOR04,$0FE8,BPLCON1,$0088
+        dc.w $4301,$FFFE,COLOR00,$0002,COLOR04,$0FD7,BPLCON1,$0088
+        dc.w $4401,$FFFE,COLOR00,$0103,COLOR04,$0FD7,BPLCON1,$0088
+        dc.w $4501,$FFFE,COLOR00,$0103,COLOR04,$0FD6,BPLCON1,$0088
+        dc.w $4601,$FFFE,COLOR00,$0103,COLOR04,$0FD6,BPLCON1,$0088
+        dc.w $4701,$FFFE,COLOR00,$0103,COLOR04,$0FC5,BPLCON1,$0088
+        dc.w $4801,$FFFE,COLOR00,$0103,COLOR04,$0FC5,BPLCON1,$0088
+        dc.w $4901,$FFFE,COLOR00,$0103,COLOR04,$0FC4,BPLCON1,$0088
+        dc.w $4A01,$FFFE,COLOR00,$0103,COLOR04,$0FC4,BPLCON1,$0088
+        dc.w $4B01,$FFFE,COLOR00,$0103,COLOR04,$0FB3,BPLCON1,$0088
+        dc.w $4C01,$FFFE,COLOR00,$0103,COLOR04,$0FB3,BPLCON1,$0088
+        dc.w $4D01,$FFFE,COLOR00,$0103,COLOR04,$0FB3,BPLCON1,$0088
+        dc.w $4E01,$FFFE,COLOR00,$0103,COLOR04,$0FA3,BPLCON1,$0088
+        dc.w $4F01,$FFFE,COLOR00,$0103,COLOR04,$0FA3,BPLCON1,$0088
+        dc.w $5001,$FFFE,COLOR00,$0103,COLOR04,$0F93,BPLCON1,$0088
+        dc.w $5101,$FFFE,COLOR00,$0103,COLOR04,$0F93,BPLCON1,$0088
+        dc.w $5201,$FFFE,COLOR00,$0103,COLOR04,$0F93,BPLCON1,$0088
+        dc.w $5301,$FFFE,COLOR00,$0103,COLOR04,$0F83,BPLCON1,$0088
+        dc.w $5401,$FFFE,COLOR00,$0113,COLOR04,$0E82,BPLCON1,$0088
+        dc.w $5501,$FFFE,COLOR00,$0113,COLOR04,$0E82,BPLCON1,$0088
+        dc.w $5601,$FFFE,COLOR00,$0113,COLOR04,$0E72,BPLCON1,$0088
+        dc.w $5701,$FFFE,COLOR00,$0113,COLOR04,$0E72,BPLCON1,$0088
+        dc.w $5801,$FFFE,COLOR00,$0113,COLOR04,$0E62,BPLCON1,$0088
+        dc.w $5901,$FFFE,COLOR00,$0113,COLOR04,$0E62,BPLCON1,$0088
+        dc.w $5A01,$FFFE,COLOR00,$0113,COLOR04,$0E62,BPLCON1,$0088
+        dc.w $5B01,$FFFE,COLOR00,$0113,COLOR04,$0E52,BPLCON1,$0088
+        dc.w $5C01,$FFFE,COLOR00,$0113,COLOR04,$0E52,BPLCON1,$0088
+        dc.w $5D01,$FFFE,COLOR00,$0113,COLOR04,$0E52,BPLCON1,$0088
+        dc.w $5E01,$FFFE,COLOR00,$0113,COLOR04,$0E52,BPLCON1,$0088
+        dc.w $5F01,$FFFE,COLOR00,$0113,COLOR04,$0E52,BPLCON1,$0088
+        dc.w $6001,$FFFE,COLOR00,$0113,COLOR04,$0E52,BPLCON1,$0088
+        dc.w $6101,$FFFE,COLOR00,$0113,COLOR04,$0E52,BPLCON1,$0088
+        dc.w $6201,$FFFE,COLOR00,$0113,COLOR04,$0E52,BPLCON1,$0088
+        dc.w $6301,$FFFE,COLOR00,$0113,COLOR04,$0E52,BPLCON1,$0088
+        dc.w $6401,$FFFE,COLOR00,$0214,COLOR04,$0E52,BPLCON1,$0088
+        dc.w $6501,$FFFE,COLOR00,$0214,COLOR04,$0E52,BPLCON1,$0088
+        dc.w $6601,$FFFE,COLOR00,$0214,COLOR04,$0E52,BPLCON1,$0088
+        dc.w $6701,$FFFE,COLOR00,$0214,COLOR04,$0E52,BPLCON1,$0088
+        dc.w $6801,$FFFE,COLOR00,$0214,COLOR04,$0E52,BPLCON1,$0088
+        dc.w $6901,$FFFE,COLOR00,$0214,COLOR04,$0E52,BPLCON1,$0088
+        dc.w $6A01,$FFFE,COLOR00,$0214,COLOR04,$0E52,BPLCON1,$0088
+        dc.w $6B01,$FFFE,COLOR00,$0214,COLOR04,$0E52,BPLCON1,$0088
+        dc.w $6C01,$FFFE,COLOR00,$0214,COLOR04,$0E52,BPLCON1,$0088
+        dc.w $6D01,$FFFE,COLOR00,$0214,COLOR04,$0E52,BPLCON1,$0088
+        dc.w $6E01,$FFFE,COLOR00,$0214,COLOR04,$0E52,BPLCON1,$0088
+        dc.w $6F01,$FFFE,COLOR00,$0214,COLOR04,$0E52,BPLCON1,$0088
+        dc.w $7001,$FFFE,COLOR00,$0214,COLOR04,$0E52,BPLCON1,$0088
+        dc.w $7101,$FFFE,COLOR00,$0214,COLOR04,$0E52,BPLCON1,$0088
+        dc.w $7201,$FFFE,COLOR00,$0214,COLOR04,$0E52,BPLCON1,$0088
+        dc.w $7301,$FFFE,COLOR00,$0214,COLOR04,$0E52,BPLCON1,$0088
         dc.w $7401,$FFFE                    ; y=72: animated slot, then the wave ends
 cop_raster_color:
         dc.w COLOR00,$013                   ; animated by UpdateRaster each frame

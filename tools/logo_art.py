@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Procedural 16 colour logo art for the Aurora Grid demo.
+"""Procedural 16 colour logo art for the Uber Cracking Service intro.
 
-Pure geometry, no image libraries, fully deterministic. The word AURORA is built from stroked
+Pure geometry, no image libraries, fully deterministic. The word UBER is built from stroked
 line and arc primitives (a distance field), then lit like an embossed metal bevel with an
 extruded drop shadow. CRACKING SERVICE is chiselled from the 5x7 font, flanked by wing
 ornaments. The result is a 320x64 image of colour indices 0..15, which the build stores as
@@ -19,8 +19,8 @@ import math
 W, H = 320, 64
 SS = 3                       # supersampling per axis
 
-PALETTE = [0x002, 0x021, 0x064, 0x0A8, 0x4FC, 0x8FD, 0xCFE, 0xFFF,
-           0x315, 0x103, 0x236, 0x458, 0x7AC, 0xBDF, 0xF5C, 0xFFF]
+PALETTE = [0x001, 0x100, 0x631, 0x963, 0xFC4, 0xFE9, 0xFFC, 0xFFF,
+           0x424, 0x212, 0x246, 0x468, 0x6AC, 0xADF, 0xD42, 0xFFF]
 
 # ---- 5x7 glyphs (only the letters this logo needs) -------------------------------------------
 GLYPHS = {
@@ -34,11 +34,6 @@ GLYPHS = {
     'N': ['10001', '11001', '10101', '10011', '10001', '10001', '10001'],
     'R': ['11110', '10001', '10001', '11110', '10100', '10010', '10001'],
     'S': ['01111', '10000', '10000', '01110', '00001', '00001', '11110'],
-    'D': ['11110', '10001', '10001', '10001', '10001', '10001', '11110'],
-    'H': ['10001', '10001', '10001', '11111', '10001', '10001', '10001'],
-    'M': ['10001', '11011', '10101', '10101', '10001', '10001', '10001'],
-    'T': ['11111', '00100', '00100', '00100', '00100', '00100', '00100'],
-    'Y': ['10001', '10001', '01010', '00100', '00100', '00100', '00100'],
     'V': ['10001', '10001', '10001', '10001', '10001', '01010', '00100'],
 }
 
@@ -62,7 +57,7 @@ def d_arc(px, py, cx, cy, r, a0, a1):
     return min(math.hypot(px - e0[0], py - e0[1]), math.hypot(px - e1[0], py - e1[1]))
 
 
-LW, LH, STROKE = 26.0, 36.0, 4.0      # letter box and half stroke width
+LW, LH, STROKE = 30.0, 36.0, 4.6      # letter box and half stroke width
 
 
 def letter(ch, ox, oy):
@@ -70,16 +65,6 @@ def letter(ch, ox, oy):
     r = STROKE
     t, m, b = oy + r, oy + LH / 2, oy + LH - r                 # top / middle / bottom centre lines
     l, rr = ox + r, ox + LW - r
-    if ch == 'A':
-        cx = (l + rr) / 2
-        def xat(y): return l + (cx - l) * (b - y) / (b - t)
-        yb = m + 6
-        return [lambda x, y: d_seg(x, y, l, b, cx, t), lambda x, y: d_seg(x, y, rr, b, cx, t),
-                lambda x, y: d_seg(x, y, xat(yb), yb, 2 * cx - xat(yb), yb)]
-    if ch == 'O':
-        cx, R = (l + rr) / 2, (rr - l) / 2
-        return [lambda x, y: d_seg(x, y, l, t + R, l, b - R), lambda x, y: d_seg(x, y, rr, t + R, rr, b - R),
-                lambda x, y: d_arc(x, y, cx, t + R, R, 180, 360), lambda x, y: d_arc(x, y, cx, b - R, R, 0, 180)]
     if ch == 'U':
         cx, cy, R = (l + rr) / 2, b - (rr - l) / 2, (rr - l) / 2
         return [lambda x, y: d_seg(x, y, l, t, l, cy), lambda x, y: d_seg(x, y, rr, t, rr, cy),
@@ -110,12 +95,12 @@ def sample_field(prims, x, y):
 def build():
     img = [[0] * W for _ in range(H)]
 
-    # --- AURORA: 6 letters, 4 px gaps
-    gap = 4
-    total = 6 * LW + 5 * gap
+    # --- UBER: 4 letters, 3 px gaps -> total width 4*30 + 3*5
+    gap = 5
+    total = 4 * LW + 3 * gap
     x0 = (W - total) / 2
     prims = []
-    for i, ch in enumerate('AURORA'):
+    for i, ch in enumerate('UBER'):
         prims += letter(ch, x0 + i * (LW + gap), 4.0)
     field = lambda x, y: sample_field(prims, x, y)
 
@@ -160,7 +145,7 @@ def build():
                         img[y][x] = col
 
     # --- CRACKING SERVICE: chiselled 2x font with a drop shadow
-    text = 'NIGHT GRID SYSTEM'
+    text = 'CRACKING SERVICES AS'
     sc = 2
     tw = len(text) * 6 * sc - sc
     tx0, ty0 = (W - tw) // 2, 46
@@ -192,7 +177,7 @@ def build():
 
     # --- wing ornaments: stacked slanted bars, tapering towards the logo
     for side in (-1, 1):
-        for k, (length, col) in enumerate(((52, 11), (46, 12), (38, 13), (30, 12), (22, 11))):
+        for k, (length, col) in enumerate(((66, 11), (58, 12), (48, 13), (38, 12), (28, 11))):
             yb = 12 + k * 7
             xs = 14 if side < 0 else W - 15 - length
             for yy in range(4):

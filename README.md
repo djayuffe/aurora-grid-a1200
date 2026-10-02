@@ -1,23 +1,24 @@
-# AURORA GRID — Night Grid System
+# AURORA GRID — an Uber Cracking Services AS demo
 
 A self-contained Amiga demo in 68000 assembly. **Requires an Amiga 1200 or 4000 (AGA chipset).** On any other machine it prints a message and exits without touching the hardware.
 
 **How AGA is used (and how far it goes):** the demo checks for the AGA Lisa chip at startup, and the plasma and floor-bar gradients are driven through the AGA 24-bit palette (two `COLOR00` writes per scanline via `BPLCON3` `LOCT`), giving smooth 16-million-colour gradients that OCS/ECS cannot show. The main display (logo, stars, wireframes, scroller) is still the 4-bitplane / 16-colour layout inherited from an earlier project, so it is not a full 256-colour or 8-bitplane AGA demo.
 
 ## What's in it
-- **Logo:** procedurally drawn AURORA wordmark (distance-field letters, bevel lighting, violet extrusion) with a chiselled "NIGHT GRID SYSTEM" subtitle and a Copper-driven teal-to-blue gradient; wavy per-line scroll.
+- **Logo:** the Uber Cracking Services AS logo, procedurally drawn (distance-field UBER letters, gold bevel lighting, extrusion shadow, chiselled "CRACKING SERVICES AS" subtitle, steel wing ornaments) with a Copper-driven gold gradient and wavy per-line scroll.
 - **Copper raster plasma (24-bit):** the whole middle band is repainted every frame from three travelling sines (one a chirp), through a 192-step 24-bit aurora palette. Strength is animated per scene.
 - **Wireframe tunnel:** 5 twisting rings with a wandering axis, drawn with the blitter line engine.
-- **3D shapes:** cube, octahedron and a cuboctahedron, tumbling independently in perspective.
+- **3D shapes with physics:** cube, octahedron and a cuboctahedron tumble in perspective. Every kick drum row in the music throws them sideways, up and away from the viewer; gravity pulls them back, they bounce off invisible walls and floor (sized so nothing leaves the band), squash on hard landings and get a spin boost on kick and snare.
 - **Eight timed scenes** (256 frames each, loop ~41 s). Parameters ease between scenes: objects shrink away and grow back, speeds ramp, plasma strength fades. Scene table: `sec_tab` in `src/main.s`.
-- **Hardware sprite ball ring**, depth starfield, copper-bar floor, sine scroller text.
+- **Hardware sprite ball ring:** 8 balls with prebuilt rotation frames - a striped surface that visibly turns, key light, specular highlight, bounce-light rim and dithered shadow terminator. Depth starfield (new stars never spawn in a central dead zone where they would crawl and look stuck), copper-bar floor, scroller text.
 - **Music:** generated 4-channel ProTracker module in D minor (triangle bass, saw lead, pad arpeggios, kick/snare/hats, fills), 10-step song order.
 
 ## Verification status
 - Builds cleanly; static validator passes.
 - FS-UAE, A1200 model: logo, 24-bit plasma and bars, cuboctahedron, tunnel + octahedron scenes and the scroller were checked by eye.
 - FS-UAE, A500 model: the demo does not start (AGA gate). The refusal message text itself was not seen in the emulator window.
-- Frame timing: measured in FS-UAE (A1200 model) with a beam-position probe over a full scene loop: the worst frame's work ends around beam line 179 of 312, well before the vsync line (300), so 50 fps has lots of headroom. This is an emulator measurement, not real hardware.
+- Frame timing: measured in FS-UAE (A1200 model) with a beam-position probe over a full scene loop, after the physics, star and ball changes: the worst frame's work ends around beam line 186 of 312, well before the vsync line (300). Emulator measurement, not real hardware.
+- Physics, star respawn and ball lighting were checked by eye from screenshots (stills cannot show motion smoothness).
 - Music was validated structurally and plays, but has not been listened to by the author of this repo.
 - Not tested on real hardware.
 

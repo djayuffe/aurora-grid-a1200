@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Procedural 16 colour logo art for the Amiga Nametample A1200 intro.
+"""Procedural 16 colour logo art for the Aurora Grid A1200 intro.
 
-Pure geometry, no image libraries, fully deterministic. The word AMIGA is built from a large
+Pure geometry, no image libraries, fully deterministic. The word AURORA is built from a large
 chiselled 5x7 mask, then lit like an embossed metal bevel with an extruded drop shadow.
-NAMETAMPLE A1200 is chiselled from the 5x7 font, flanked by wing ornaments. The result is a
+GRID A1200 is chiselled from the 5x7 font, flanked by wing ornaments. The result is a
 320x64 image of colour indices 0..15, which the build stores as four bitplanes, together with
 the matching palette.
 
@@ -30,6 +30,7 @@ GLYPHS = {
     '2': ['01110', '10001', '00001', '00010', '00100', '01000', '11111'],
     'A': ['01110', '10001', '10001', '11111', '10001', '10001', '10001'],
     'C': ['01111', '10000', '10000', '10000', '10000', '10000', '01111'],
+    'D': ['11110', '10001', '10001', '10001', '10001', '10001', '11110'],
     'E': ['11111', '10000', '10000', '11110', '10000', '10000', '11111'],
     'G': ['01111', '10000', '10000', '10111', '10001', '10001', '01111'],
     'I': ['01110', '00100', '00100', '00100', '00100', '00100', '01110'],
@@ -37,10 +38,12 @@ GLYPHS = {
     'L': ['10000', '10000', '10000', '10000', '10000', '10000', '11111'],
     'M': ['10001', '11011', '10101', '10101', '10001', '10001', '10001'],
     'N': ['10001', '11001', '10101', '10011', '10001', '10001', '10001'],
+    'O': ['01110', '10001', '10001', '10001', '10001', '10001', '01110'],
     'P': ['11110', '10001', '10001', '11110', '10000', '10000', '10000'],
     'R': ['11110', '10001', '10001', '11110', '10100', '10010', '10001'],
     'S': ['01111', '10000', '10000', '01110', '00001', '00001', '11110'],
     'T': ['11111', '00100', '00100', '00100', '00100', '00100', '00100'],
+    'U': ['10001', '10001', '10001', '10001', '10001', '10001', '01110'],
     'V': ['10001', '10001', '10001', '10001', '10001', '01010', '00100'],
 }
 
@@ -102,8 +105,8 @@ def sample_field(prims, x, y):
 def build():
     img = [[0] * W for _ in range(H)]
 
-    # --- AMIGA: large 5x7 mask, bevel-lit and extruded.
-    word = 'AMIGA'
+    # --- AURORA: large 5x7 mask, bevel-lit and extruded.
+    word = 'AURORA'
     sc_big = 6
     gap = 4
     glyph_w, glyph_h = 5 * sc_big, 7 * sc_big
@@ -150,8 +153,8 @@ def build():
                     if img[y][x] == 0 or col == 8:
                         img[y][x] = col
 
-    # --- NAMETAMPLE A1200: chiselled 2x font with a drop shadow
-    text = 'NAMETAMPLE A1200'
+    # --- GRID A1200: chiselled 2x font with a drop shadow
+    text = 'GRID A1200'
     sc = 2
     tw = len(text) * 6 * sc - sc
     tx0, ty0 = (W - tw) // 2, 46

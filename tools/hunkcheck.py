@@ -24,7 +24,7 @@ HUNKB_ADVISORY=29; HUNKB_CHIP=30; HUNKB_FAST=31
 MEM_ANY=0; MEM_CHIP=1; MEM_FAST=2; MEM_EXT=3   # bit 30 = chip, bit 31 = fast
 MEMNAMES={MEM_ANY:'any (fast preferred)',MEM_FAST:'fast required',MEM_CHIP:'chip required',MEM_EXT:'explicit flags'}
 
-p=Path(sys.argv[1] if len(sys.argv)>1 else 'build/amiga_nametample_a1200')
+p=Path(sys.argv[1] if len(sys.argv)>1 else 'build/aurora_grid_a1200')
 b=p.read_bytes(); off=0
 def u32():
     global off

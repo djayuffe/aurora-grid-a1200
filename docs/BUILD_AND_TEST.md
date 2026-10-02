@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | Static source/assets | `make validate` | passes |
 | Reproducible assets | `make verify-repro` | passes |
-| Full executable | `make` | requires `vasmm68k_mot`; emits `build/amiga_nametample_a1200` |
+| Full executable | `make` | requires `vasmm68k_mot`; emits `build/aurora_grid_a1200` |
 | Manifest | `python3 tools/make_manifest.py` | refreshes `MANIFEST.sha256` |
 
 `make` uses `-m68000 -kick1hunks -Fhunkexe` for classic Kickstart-compatible output.
@@ -16,7 +16,7 @@
 Use an A1200/AGA PAL configuration:
 
 - [ ] non-AGA configuration refuses to start cleanly;
-- [ ] logo is stable, unclipped and visibly renamed to AMIGA NAMETAMPLE A1200;
+- [ ] logo is stable, unclipped and visibly reads AURORA / GRID A1200;
 - [ ] logo wave and glint move smoothly with no row tearing;
 - [ ] 24-bit plasma has no obvious stepping or corrupt colour writes;
 - [ ] stars fly outward without trails;

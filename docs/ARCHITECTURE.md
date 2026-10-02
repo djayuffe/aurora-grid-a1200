@@ -2,7 +2,7 @@
 
 ## Target
 
-AMIGA NAMETAMPLE A1200 is a PAL AGA demo for Amiga 1200/4000-class machines. The code is kept 68000-compatible, but AGA colour hardware is required and checked at startup.
+Aurora Grid A1200 is a PAL AGA demo for Amiga 1200/4000-class machines. The code is kept 68000-compatible, but AGA colour hardware is required and checked at startup.
 
 ## Startup and ownership
 

@@ -2,7 +2,7 @@ PYTHON ?= python3
 VASM ?= $(shell command -v vasmm68k_mot 2>/dev/null || true)
 LOCAL_VASM := tools/bin/vasmm68k_mot
 VASMFLAGS = -m68000 -kick1hunks -Fhunkexe -nosym -I./src
-TARGET = build/amiga_nametample_a1200
+TARGET = build/aurora_grid_a1200
 SRCS = src/main.s src/hardware.i src/modplayer.s
 GEN = tools/generate_assets.py
 # The generated assets are checked in, so they are only rebuilt when the

@@ -1,12 +1,12 @@
 # Graphics
 
-AMIGA NAMETAMPLE A1200 uses a PAL low-resolution 320×256 display with four playfield bitplanes for bitmap layers and AGA 24-bit Copper colour for the plasma/floor gradients.
+Aurora Grid A1200 uses a PAL low-resolution 320×256 display with four playfield bitplanes for bitmap layers and AGA 24-bit Copper colour for the plasma/floor gradients.
 
 ## Screen layout
 
 | Rows | Band | Main content |
 | --- | --- | --- |
-| 8–71 | Logo | generated AMIGA NAMETAMPLE A1200 logo, row wave and glint |
+| 8–71 | Logo | generated Aurora Grid A1200 logo, row wave and glint |
 | 72–75 | Raster bar | animated highlight colour slot |
 | 76–195 | Middle | starfield, 3D objects, tunnel, sprite balls, AGA plasma |
 | 200–215 | Scroller | 16-line text strip with frame lines |
@@ -17,7 +17,7 @@ AMIGA NAMETAMPLE A1200 uses a PAL low-resolution 320×256 display with four play
 - The logo generator now uses a brighter 16-colour ramp with cyan, gold, ice white, pink and dark-blue shadow tones.
 - The plasma generator uses smoothstep interpolation across a wider aurora ramp, reducing visible banding in generated tables.
 - Floor bars have softer eight-row profiles and higher contrast cyan/magenta/gold highlights over a darker base.
-- The checked-in logo preview and raw logo asset were regenerated from the renamed AMIGA NAMETAMPLE A1200 artwork.
+- The checked-in logo preview and raw logo asset are regenerated from the Aurora Grid A1200 artwork.
 
 ## Bitmap layers
 

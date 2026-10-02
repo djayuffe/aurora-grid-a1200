@@ -6,9 +6,9 @@ The repository was audited for naming consistency, AGA/OCS documentation drift, 
 
 ## Changes made
 
-- Renamed visible project identity to **AMIGA NAMETAMPLE A1200**.
+- Restored the public project identity to **Aurora Grid A1200** across source, assets, docs and build output.
 - Updated runtime AGA refusal message and scroller text.
-- Renamed build output to `build/amiga_nametample_a1200`.
+- Renamed build output to `build/aurora_grid_a1200`.
 - Regenerated the logo and MOD assets from the updated generators.
 - Improved generated colour ramps for logo, plasma and floor-bar effects.
 - Replaced outdated OCS/ECS documentation with AGA/A1200-focused docs.

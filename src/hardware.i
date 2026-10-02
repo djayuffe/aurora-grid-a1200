@@ -1,5 +1,5 @@
 ; ---------------------------------------------------------------------------
-; AMIGA NAMETAMPLE A1200 - custom register offsets and AmigaOS library offsets.
+; Aurora Grid A1200 - custom register offsets and AmigaOS library offsets.
 ;
 ; Every constant below is a documented hardware register offset or a Kickstart
 ; library vector offset (LVO). Library call sites use the LVO_* names instead of

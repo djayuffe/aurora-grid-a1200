@@ -138,6 +138,12 @@ DMAF_ALL     EQU $07FF      ; every allocatable DMA channel
 DMAF_SYSTEM  EQU $07F0      ; everything except audio 0-3, restored on exit
 
 ; Exec.library library vector offsets.
+BPLCON3           EQU $106    ; AGA: bit 9 LOCT selects whether a COLORxx write sets the high or low nibbles
+BPLCON4           EQU $10C
+FMODE             EQU $1FC
+DENISEID          EQU $07C    ; AGA Lisa reads back $xxF8
+LVO_Output        EQU -60     ; dos.library
+LVO_Write         EQU -48
 LVO_Disable       EQU -120
 LVO_Enable        EQU -126
 LVO_Forbid        EQU -132

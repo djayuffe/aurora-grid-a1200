@@ -77,6 +77,14 @@ ptr_plasma   equ reloc_table+48
 _start:
         movem.l d0-d7/a0-a6,-(sp)
 
+; --- this demo needs the AGA chipset (Amiga 1200 / 4000): its colour gradients use the 24 bit
+; palette. Lisa answers DENISEID with $xxF8; OCS reads back $xxFF and ECS Denise $xxFC.
+        lea     CUSTOM,a0
+        move.w  DENISEID(a0),d0
+        andi.w  #$00FF,d0
+        cmpi.b  #$F8,d0
+        bne     .no_aga
+
 ; --- capture the system display state ---------------------------------------
 ; COP1LC is a write side custom register and cannot be read back, so the
 ; documented system startup list pointer is taken from GfxBase->copinit.
@@ -227,6 +235,31 @@ _start:
         rts
 
 .open_fail:
+        movem.l (sp)+,d0-d7/a0-a6
+        moveq   #RETURN_FAIL,d0
+        rts
+
+; Not an AGA machine: say so on the shell, touch nothing else, and fail.
+.no_aga:
+        move.l  4.w,a6
+        lea     dos_name,a1
+        moveq   #0,d0
+        jsr     LVO_OpenLibrary(a6)
+        tst.l   d0
+        beq     .no_aga_out
+        move.l  d0,a5
+        move.l  d0,a6
+        jsr     LVO_Output(a6)
+        move.l  d0,d1
+        beq     .no_aga_close
+        move.l  #msg_need_aga,d2
+        move.l  #msg_need_aga_end-msg_need_aga,d3
+        jsr     LVO_Write(a6)
+.no_aga_close:
+        move.l  a5,a1
+        move.l  4.w,a6
+        jsr     LVO_CloseLibrary(a6)
+.no_aga_out:
         movem.l (sp)+,d0-d7/a0-a6
         moveq   #RETURN_FAIL,d0
         rts
@@ -464,8 +497,11 @@ UpdateBars:
         move.l  a1,a3
         moveq   #FLOOR_H-1,d7
 .base:
-        move.w  (a2)+,6(a3)
-        lea     8(a3),a3
+        move.l  (a2)+,d0                   ; 24 bit colour as (high nibbles, low nibbles)
+        move.w  d0,18(a3)
+        swap    d0
+        move.w  d0,10(a3)
+        lea     20(a3),a3
         dbra    d7,.base
         lea     sintab,a2
         lea     bar_colors,a3
@@ -491,10 +527,13 @@ UpdateBars:
         cmp.w   #FLOOR_H,d0
         bge     .skip
         move.w  d0,d1
-        lsl.w   #3,d1
-        move.w  (a3),6(a1,d1.w)
+        mulu    #20,d1
+        move.l  (a3),d2
+        move.w  d2,18(a1,d1.w)
+        swap    d2
+        move.w  d2,10(a1,d1.w)
 .skip:
-        addq.l  #2,a3
+        addq.l  #4,a3
         addq.w  #1,d0
         dbra    d7,.row
         addq.w  #1,d6
@@ -1204,7 +1243,7 @@ UpdatePlasma:
         neg.w   d5                         ; phase 2 starts at -2 * frame (+11 on odd frames)
         btst    #0,d3
         beq     .even
-        lea     16(a1),a1
+        lea     40(a1),a1
         addq.l  #1,a4
         addq.w  #7,d4
         addi.w  #11,d5
@@ -1227,13 +1266,15 @@ UpdatePlasma:
         add.w   0(a2,d0.w),d1              ; sine 3, the chirp
         addi.w  #381,d1                    ; 0..762
         mulu    sec_plasma,d1
-        lsr.l   #8,d1
-        lsr.l   #2,d1                      ; >>10: 0..47 at full strength
-        add.w   d1,d1
-        move.w  0(a3,d1.w),d0
-        move.w  d0,6(a1)
-        move.w  d0,14(a1)
-        lea     32(a1),a1
+        lsr.l   #8,d1                      ; >>8: 0..190 at full strength
+        lsl.w   #2,d1
+        move.l  0(a3,d1.w),d0              ; 24 bit colour as (high nibbles, low nibbles)
+        move.w  d0,18(a1)
+        move.w  d0,38(a1)
+        swap    d0
+        move.w  d0,10(a1)
+        move.w  d0,30(a1)
+        lea     80(a1),a1
         addq.l  #2,a4
         addi.w  #14,d4
         addi.w  #22,d5
@@ -1600,6 +1641,10 @@ BlitLine:
         include "modplayer.s"
 
         section data,data
+dos_name:    dc.b "dos.library",0
+msg_need_aga: dc.b "AURORA GRID needs an Amiga 1200 or 4000 (AGA chipset).",10
+msg_need_aga_end:
+        even
 old_dmacon:  dc.w 0
 old_intena:  dc.w 0
 old_adkcon:  dc.w 0
@@ -1673,12 +1718,54 @@ plasma_sq:                                  ; (row pair squared) >> 5, for the p
         dc.b 72,75,78,81,84,87,91,94,98,101,105,108,112
         even
 plasma_pal:
-        dc.w $001,$001,$002,$012,$012,$012,$013,$013
-        dc.w $013,$023,$024,$024,$024,$024,$025,$035
-        dc.w $035,$036,$136,$136,$137,$147,$147,$148
-        dc.w $148,$158,$158,$268,$268,$278,$278,$288
-        dc.w $288,$398,$398,$3A8,$3A8,$4A8,$4A9,$4B9
-        dc.w $5B9,$5B9,$5BA,$6BA,$6BA,$6CA,$7CB,$7CB
+        dc.l $00010001,$00010012,$00010013,$00010024
+        dc.l $00010035,$00010046,$00010047,$00010058
+        dc.l $0001006A,$0001006B,$0001007C,$0001008D
+        dc.l $0001009E,$0001009F,$000200A0,$000200B1
+        dc.l $000200B2,$000200C3,$000200D4,$000200E5
+        dc.l $000200E6,$000200F7,$00120008,$0012000A
+        dc.l $0012001B,$0012002C,$0012003D,$0012003E
+        dc.l $0012004F,$00130050,$00130051,$00130062
+        dc.l $00130073,$00130074,$00130085,$00130096
+        dc.l $001300A7,$001300A9,$001300BA,$001300CB
+        dc.l $001300CC,$001300DD,$001300EE,$001300FF
+        dc.l $001400F0,$00240001,$00240012,$00240013
+        dc.l $00240024,$00240036,$00240147,$00240149
+        dc.l $0024025A,$0024026B,$0024026D,$0024037E
+        dc.l $00250380,$00250391,$00250493,$002504A4
+        dc.l $002504B5,$002505B7,$002505C8,$002505DA
+        dc.l $002506EB,$002506ED,$002506FE,$0035070F
+        dc.l $00360701,$00360812,$00360824,$00360835
+        dc.l $00360937,$00360948,$00360959,$00360A5B
+        dc.l $00360A6C,$00360A7E,$00360B8F,$00370B81
+        dc.l $00370B92,$00370CA3,$00370CA5,$00370DB6
+        dc.l $00370DC8,$00370DD9,$00370EDA,$00370EEC
+        dc.l $00370EFD,$00370FFF,$00480F00,$00480F12
+        dc.l $01480023,$01480024,$01480036,$01480147
+        dc.l $01480158,$01480278,$01480398,$014803B8
+        dc.l $014804E8,$01580508,$01580628,$01580648
+        dc.l $01580768,$01580888,$015808A8,$015809D8
+        dc.l $01580AF8,$01680B18,$01680B38,$01680C58
+        dc.l $01680D78,$01680D98,$01680EC8,$01680FE8
+        dc.l $02780008,$02780028,$02780148,$02780268
+        dc.l $02780288,$027803A8,$027804D8,$027805F8
+        dc.l $02880518,$02880638,$02880758,$02880778
+        dc.l $02880898,$028809C8,$02880AE8,$02980A08
+        dc.l $02980B28,$02980C48,$02980C68,$02980D88
+        dc.l $02980EB8,$02980FD8,$02980FF8,$03A80018
+        dc.l $03A80138,$03A80158,$03A80278,$03A80398
+        dc.l $03A804B9,$03A805BA,$03A807CB,$03A808DC
+        dc.l $03A80ADD,$03A80BEE,$03A80DFF,$03B90E00
+        dc.l $03B90F01,$04B90112,$04B90223,$04B90425
+        dc.l $04B90536,$04B90747,$04B90858,$04B90959
+        dc.l $04B90B6A,$04B90C7B,$04B90E7C,$04B90F8D
+        dc.l $05B9019E,$05B9029F,$05BA03A0,$05BA05B1
+        dc.l $05BA06C2,$05BA08C4,$05BA09D5,$05BA0BE6
+        dc.l $05BA0CE7,$05BA0DF8,$05CA0F09,$06CA001A
+        dc.l $06CA021B,$06CA032C,$06CA043D,$06CA063E
+        dc.l $06CA074F,$06CB0950,$06CB0A61,$06CB0C62
+        dc.l $06CB0D74,$06CB0E85,$07CB0086,$07CB0197
+        dc.l $07CB03A8,$07CB04B9,$07CB06BA,$07CB07CB
 tun_edges:
         dc.b 0,1,1,2,2,3,3,4,4,5,5,6,6,7,7,0
         dc.b 8,9,9,10,10,11,11,12,12,13,13,14,14,15,15,8
@@ -1820,14 +1907,24 @@ wave_tab:
 
 ; Copper-bar floor: the static ramp and the 4 bars x 8 rows of colour (tools/gen_tables.py).
 floor_base:
-        dc.w $012,$012,$012,$012,$012,$012,$012,$012,$012,$123,$123,$123,$123,$123,$123,$123
-        dc.w $123,$123,$123,$123,$123,$123,$123,$123,$123,$234,$234,$234,$234,$234,$234,$234
-        dc.w $234,$234
+        dc.l $00120012,$00120123,$00120234,$00120345
+        dc.l $00120456,$00120567,$00120678,$00120789
+        dc.l $0012089A,$001209AB,$00120ABC,$00120BCD
+        dc.l $00120CDE,$00120DEF,$00130EF0,$00230F01
+        dc.l $01230012,$01230234,$01230345,$01230456
+        dc.l $01230567,$01230678,$01230789,$0123089A
+        dc.l $012309AB,$01230ABC,$01230BCD,$01230CDE
+        dc.l $01230DEF,$01240EF0,$01340F01,$02340012
+        dc.l $02340123,$02340234
 bar_colors:
-        dc.w $144,$287,$2BA,$3FC,$3FC,$2BA,$287,$144
-        dc.w $225,$358,$48C,$6AF,$6AF,$48C,$358,$225
-        dc.w $325,$638,$84C,$B6F,$B6F,$84C,$638,$325
-        dc.w $424,$837,$B4A,$F6C,$F6C,$B4A,$837,$424
+        dc.l $00440D0C,$01870A07,$02BA06F2,$03FC03FC
+        dc.l $03FC03FC,$02BA06F2,$01870A07,$00440D0C
+        dc.l $01250AA9,$03590350,$048C0C08,$06AF06AF
+        dc.l $06AF06AF,$048C0C08,$03590350,$01250AA9
+        dc.l $02150FA9,$05390E30,$084C0CC8,$0B6F0B6F
+        dc.l $0B6F0B6F,$084C0CC8,$05390E30,$02150FA9
+        dc.l $041400AC,$08370037,$0B4A0FC2,$0F6C0F6C
+        dc.l $0F6C0F6C,$0B4A0FC2,$08370037,$041400AC
 recip_star:
         dc.w 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
         dc.w 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
@@ -1912,6 +2009,8 @@ copper:
         dc.w DDFSTRT,$0030,DDFSTOP,$00D0   ; one extra word per line (BPLCON1 scroll), see BPLxMOD
         dc.w BPLCON0,$4200,BPLCON1,$0000,BPLCON2,$0002   ; 4 bitplanes; sprites 4-7 (the far balls) go behind the playfield
         dc.w BPL1MOD,$FFFE,BPL2MOD,$FFFE   ; 21 words fetched, 20 words per line: step back 2 bytes
+        dc.w BPLCON3,$0E00,COLOR00,$0000   ; AGA: clear COLOR00's low nibbles, then back to high-nibble writes
+        dc.w BPLCON3,$0C00,BPLCON4,$0011,FMODE,$0000
 cop_bpl1:
         dc.w BPL1PTH,0,BPL1PTL,0
         dc.w BPL2PTH,0,BPL2PTL,0
@@ -2015,127 +2114,128 @@ cop_raster_color:
         dc.w COLOR05,$FFF,COLOR06,$FC5,COLOR07,$FC5,COLOR08,$F94
         dc.w COLOR09,$F94,COLOR10,$FE9,COLOR11,$FE9,COLOR12,$F94
         dc.w COLOR13,$F94,COLOR14,$FE9,COLOR15,$FE9
-cop_plasma:                                 ; 120 rows of WAIT + COLOR00, 8 bytes each (value at +6)
-        dc.w $7801,$FFFE,COLOR00,$0001
-        dc.w $7901,$FFFE,COLOR00,$0001
-        dc.w $7A01,$FFFE,COLOR00,$0001
-        dc.w $7B01,$FFFE,COLOR00,$0001
-        dc.w $7C01,$FFFE,COLOR00,$0001
-        dc.w $7D01,$FFFE,COLOR00,$0001
-        dc.w $7E01,$FFFE,COLOR00,$0001
-        dc.w $7F01,$FFFE,COLOR00,$0001
-        dc.w $8001,$FFFE,COLOR00,$0001
-        dc.w $8101,$FFFE,COLOR00,$0001
-        dc.w $8201,$FFFE,COLOR00,$0001
-        dc.w $8301,$FFFE,COLOR00,$0001
-        dc.w $8401,$FFFE,COLOR00,$0001
-        dc.w $8501,$FFFE,COLOR00,$0001
-        dc.w $8601,$FFFE,COLOR00,$0001
-        dc.w $8701,$FFFE,COLOR00,$0001
-        dc.w $8801,$FFFE,COLOR00,$0001
-        dc.w $8901,$FFFE,COLOR00,$0001
-        dc.w $8A01,$FFFE,COLOR00,$0001
-        dc.w $8B01,$FFFE,COLOR00,$0001
-        dc.w $8C01,$FFFE,COLOR00,$0001
-        dc.w $8D01,$FFFE,COLOR00,$0001
-        dc.w $8E01,$FFFE,COLOR00,$0001
-        dc.w $8F01,$FFFE,COLOR00,$0001
-        dc.w $9001,$FFFE,COLOR00,$0001
-        dc.w $9101,$FFFE,COLOR00,$0001
-        dc.w $9201,$FFFE,COLOR00,$0001
-        dc.w $9301,$FFFE,COLOR00,$0001
-        dc.w $9401,$FFFE,COLOR00,$0001
-        dc.w $9501,$FFFE,COLOR00,$0001
-        dc.w $9601,$FFFE,COLOR00,$0001
-        dc.w $9701,$FFFE,COLOR00,$0001
-        dc.w $9801,$FFFE,COLOR00,$0001
-        dc.w $9901,$FFFE,COLOR00,$0001
-        dc.w $9A01,$FFFE,COLOR00,$0001
-        dc.w $9B01,$FFFE,COLOR00,$0001
-        dc.w $9C01,$FFFE,COLOR00,$0001
-        dc.w $9D01,$FFFE,COLOR00,$0001
-        dc.w $9E01,$FFFE,COLOR00,$0001
-        dc.w $9F01,$FFFE,COLOR00,$0001
-        dc.w $A001,$FFFE,COLOR00,$0001
-        dc.w $A101,$FFFE,COLOR00,$0001
-        dc.w $A201,$FFFE,COLOR00,$0001
-        dc.w $A301,$FFFE,COLOR00,$0001
-        dc.w $A401,$FFFE,COLOR00,$0001
-        dc.w $A501,$FFFE,COLOR00,$0001
-        dc.w $A601,$FFFE,COLOR00,$0001
-        dc.w $A701,$FFFE,COLOR00,$0001
-        dc.w $A801,$FFFE,COLOR00,$0001
-        dc.w $A901,$FFFE,COLOR00,$0001
-        dc.w $AA01,$FFFE,COLOR00,$0001
-        dc.w $AB01,$FFFE,COLOR00,$0001
-        dc.w $AC01,$FFFE,COLOR00,$0001
-        dc.w $AD01,$FFFE,COLOR00,$0001
-        dc.w $AE01,$FFFE,COLOR00,$0001
-        dc.w $AF01,$FFFE,COLOR00,$0001
-        dc.w $B001,$FFFE,COLOR00,$0001
-        dc.w $B101,$FFFE,COLOR00,$0001
-        dc.w $B201,$FFFE,COLOR00,$0001
-        dc.w $B301,$FFFE,COLOR00,$0001
-        dc.w $B401,$FFFE,COLOR00,$0001
-        dc.w $B501,$FFFE,COLOR00,$0001
-        dc.w $B601,$FFFE,COLOR00,$0001
-        dc.w $B701,$FFFE,COLOR00,$0001
-        dc.w $B801,$FFFE,COLOR00,$0001
-        dc.w $B901,$FFFE,COLOR00,$0001
-        dc.w $BA01,$FFFE,COLOR00,$0001
-        dc.w $BB01,$FFFE,COLOR00,$0001
-        dc.w $BC01,$FFFE,COLOR00,$0001
-        dc.w $BD01,$FFFE,COLOR00,$0001
-        dc.w $BE01,$FFFE,COLOR00,$0001
-        dc.w $BF01,$FFFE,COLOR00,$0001
-        dc.w $C001,$FFFE,COLOR00,$0001
-        dc.w $C101,$FFFE,COLOR00,$0001
-        dc.w $C201,$FFFE,COLOR00,$0001
-        dc.w $C301,$FFFE,COLOR00,$0001
-        dc.w $C401,$FFFE,COLOR00,$0001
-        dc.w $C501,$FFFE,COLOR00,$0001
-        dc.w $C601,$FFFE,COLOR00,$0001
-        dc.w $C701,$FFFE,COLOR00,$0001
-        dc.w $C801,$FFFE,COLOR00,$0001
-        dc.w $C901,$FFFE,COLOR00,$0001
-        dc.w $CA01,$FFFE,COLOR00,$0001
-        dc.w $CB01,$FFFE,COLOR00,$0001
-        dc.w $CC01,$FFFE,COLOR00,$0001
-        dc.w $CD01,$FFFE,COLOR00,$0001
-        dc.w $CE01,$FFFE,COLOR00,$0001
-        dc.w $CF01,$FFFE,COLOR00,$0001
-        dc.w $D001,$FFFE,COLOR00,$0001
-        dc.w $D101,$FFFE,COLOR00,$0001
-        dc.w $D201,$FFFE,COLOR00,$0001
-        dc.w $D301,$FFFE,COLOR00,$0001
-        dc.w $D401,$FFFE,COLOR00,$0001
-        dc.w $D501,$FFFE,COLOR00,$0001
-        dc.w $D601,$FFFE,COLOR00,$0001
-        dc.w $D701,$FFFE,COLOR00,$0001
-        dc.w $D801,$FFFE,COLOR00,$0001
-        dc.w $D901,$FFFE,COLOR00,$0001
-        dc.w $DA01,$FFFE,COLOR00,$0001
-        dc.w $DB01,$FFFE,COLOR00,$0001
-        dc.w $DC01,$FFFE,COLOR00,$0001
-        dc.w $DD01,$FFFE,COLOR00,$0001
-        dc.w $DE01,$FFFE,COLOR00,$0001
-        dc.w $DF01,$FFFE,COLOR00,$0001
-        dc.w $E001,$FFFE,COLOR00,$0001
-        dc.w $E101,$FFFE,COLOR00,$0001
-        dc.w $E201,$FFFE,COLOR00,$0001
-        dc.w $E301,$FFFE,COLOR00,$0001
-        dc.w $E401,$FFFE,COLOR00,$0001
-        dc.w $E501,$FFFE,COLOR00,$0001
-        dc.w $E601,$FFFE,COLOR00,$0001
-        dc.w $E701,$FFFE,COLOR00,$0001
-        dc.w $E801,$FFFE,COLOR00,$0001
-        dc.w $E901,$FFFE,COLOR00,$0001
-        dc.w $EA01,$FFFE,COLOR00,$0001
-        dc.w $EB01,$FFFE,COLOR00,$0001
-        dc.w $EC01,$FFFE,COLOR00,$0001
-        dc.w $ED01,$FFFE,COLOR00,$0001
-        dc.w $EE01,$FFFE,COLOR00,$0001
-        dc.w $EF01,$FFFE,COLOR00,$0001
+cop_plasma:                                 ; 120 rows of 20 bytes: WAIT, BPLCON3, COLOR00 high (+10), BPLCON3, COLOR00 low (+18)
+        dc.w $7801,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $7901,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $7A01,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $7B01,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $7C01,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $7D01,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $7E01,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $7F01,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $8001,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $8101,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $8201,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $8301,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $8401,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $8501,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $8601,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $8701,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $8801,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $8901,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $8A01,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $8B01,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $8C01,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $8D01,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $8E01,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $8F01,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $9001,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $9101,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $9201,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $9301,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $9401,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $9501,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $9601,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $9701,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $9801,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $9901,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $9A01,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $9B01,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $9C01,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $9D01,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $9E01,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $9F01,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $A001,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $A101,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $A201,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $A301,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $A401,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $A501,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $A601,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $A701,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $A801,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $A901,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $AA01,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $AB01,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $AC01,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $AD01,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $AE01,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $AF01,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $B001,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $B101,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $B201,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $B301,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $B401,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $B501,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $B601,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $B701,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $B801,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $B901,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $BA01,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $BB01,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $BC01,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $BD01,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $BE01,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $BF01,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $C001,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $C101,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $C201,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $C301,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $C401,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $C501,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $C601,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $C701,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $C801,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $C901,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $CA01,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $CB01,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $CC01,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $CD01,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $CE01,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $CF01,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $D001,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $D101,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $D201,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $D301,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $D401,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $D501,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $D601,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $D701,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $D801,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $D901,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $DA01,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $DB01,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $DC01,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $DD01,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $DE01,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $DF01,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $E001,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $E101,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $E201,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $E301,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $E401,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $E501,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $E601,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $E701,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $E801,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $E901,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $EA01,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $EB01,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $EC01,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $ED01,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $EE01,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w $EF01,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
+        dc.w BPLCON3,$0C00                  ; back to high-nibble colour writes
         dc.w $F001,$FFFE,COLOR00,$0001
         dc.w $F101,$FFFE,COLOR00,$06CF
         dc.w $F201,$FFFE,COLOR00,$0124
@@ -2150,41 +2250,42 @@ cop_plasma:                                 ; 120 rows of WAIT + COLOR00, 8 byte
         dc.w $0201,$FFFE,COLOR01,$05BE
         dc.w $0601,$FFFE,COLOR00,$06CF
         dc.w $0701,$FFFE,COLOR00,$0001
-cop_bars:                                   ; 34 rows of WAIT + COLOR00, 8 bytes each (value at +6)
-        dc.w $0A01,$FFFE,COLOR00,$0012
-        dc.w $0B01,$FFFE,COLOR00,$0012
-        dc.w $0C01,$FFFE,COLOR00,$0012
-        dc.w $0D01,$FFFE,COLOR00,$0012
-        dc.w $0E01,$FFFE,COLOR00,$0012
-        dc.w $0F01,$FFFE,COLOR00,$0012
-        dc.w $1001,$FFFE,COLOR00,$0012
-        dc.w $1101,$FFFE,COLOR00,$0012
-        dc.w $1201,$FFFE,COLOR00,$0012
-        dc.w $1301,$FFFE,COLOR00,$0123
-        dc.w $1401,$FFFE,COLOR00,$0123
-        dc.w $1501,$FFFE,COLOR00,$0123
-        dc.w $1601,$FFFE,COLOR00,$0123
-        dc.w $1701,$FFFE,COLOR00,$0123
-        dc.w $1801,$FFFE,COLOR00,$0123
-        dc.w $1901,$FFFE,COLOR00,$0123
-        dc.w $1A01,$FFFE,COLOR00,$0123
-        dc.w $1B01,$FFFE,COLOR00,$0123
-        dc.w $1C01,$FFFE,COLOR00,$0123
-        dc.w $1D01,$FFFE,COLOR00,$0123
-        dc.w $1E01,$FFFE,COLOR00,$0123
-        dc.w $1F01,$FFFE,COLOR00,$0123
-        dc.w $2001,$FFFE,COLOR00,$0123
-        dc.w $2101,$FFFE,COLOR00,$0123
-        dc.w $2201,$FFFE,COLOR00,$0123
-        dc.w $2301,$FFFE,COLOR00,$0234
-        dc.w $2401,$FFFE,COLOR00,$0234
-        dc.w $2501,$FFFE,COLOR00,$0234
-        dc.w $2601,$FFFE,COLOR00,$0234
-        dc.w $2701,$FFFE,COLOR00,$0234
-        dc.w $2801,$FFFE,COLOR00,$0234
-        dc.w $2901,$FFFE,COLOR00,$0234
-        dc.w $2A01,$FFFE,COLOR00,$0234
-        dc.w $2B01,$FFFE,COLOR00,$0234
+cop_bars:                                   ; 34 rows of 20 bytes, same layout as cop_plasma
+        dc.w $0A01,$FFFE,BPLCON3,$0C00,COLOR00,$0012,BPLCON3,$0E00,COLOR00,$0012
+        dc.w $0B01,$FFFE,BPLCON3,$0C00,COLOR00,$0012,BPLCON3,$0E00,COLOR00,$0123
+        dc.w $0C01,$FFFE,BPLCON3,$0C00,COLOR00,$0012,BPLCON3,$0E00,COLOR00,$0234
+        dc.w $0D01,$FFFE,BPLCON3,$0C00,COLOR00,$0012,BPLCON3,$0E00,COLOR00,$0345
+        dc.w $0E01,$FFFE,BPLCON3,$0C00,COLOR00,$0012,BPLCON3,$0E00,COLOR00,$0456
+        dc.w $0F01,$FFFE,BPLCON3,$0C00,COLOR00,$0012,BPLCON3,$0E00,COLOR00,$0567
+        dc.w $1001,$FFFE,BPLCON3,$0C00,COLOR00,$0012,BPLCON3,$0E00,COLOR00,$0678
+        dc.w $1101,$FFFE,BPLCON3,$0C00,COLOR00,$0012,BPLCON3,$0E00,COLOR00,$0789
+        dc.w $1201,$FFFE,BPLCON3,$0C00,COLOR00,$0012,BPLCON3,$0E00,COLOR00,$089A
+        dc.w $1301,$FFFE,BPLCON3,$0C00,COLOR00,$0012,BPLCON3,$0E00,COLOR00,$09AB
+        dc.w $1401,$FFFE,BPLCON3,$0C00,COLOR00,$0012,BPLCON3,$0E00,COLOR00,$0ABC
+        dc.w $1501,$FFFE,BPLCON3,$0C00,COLOR00,$0012,BPLCON3,$0E00,COLOR00,$0BCD
+        dc.w $1601,$FFFE,BPLCON3,$0C00,COLOR00,$0012,BPLCON3,$0E00,COLOR00,$0CDE
+        dc.w $1701,$FFFE,BPLCON3,$0C00,COLOR00,$0012,BPLCON3,$0E00,COLOR00,$0DEF
+        dc.w $1801,$FFFE,BPLCON3,$0C00,COLOR00,$0013,BPLCON3,$0E00,COLOR00,$0EF0
+        dc.w $1901,$FFFE,BPLCON3,$0C00,COLOR00,$0023,BPLCON3,$0E00,COLOR00,$0F01
+        dc.w $1A01,$FFFE,BPLCON3,$0C00,COLOR00,$0123,BPLCON3,$0E00,COLOR00,$0012
+        dc.w $1B01,$FFFE,BPLCON3,$0C00,COLOR00,$0123,BPLCON3,$0E00,COLOR00,$0234
+        dc.w $1C01,$FFFE,BPLCON3,$0C00,COLOR00,$0123,BPLCON3,$0E00,COLOR00,$0345
+        dc.w $1D01,$FFFE,BPLCON3,$0C00,COLOR00,$0123,BPLCON3,$0E00,COLOR00,$0456
+        dc.w $1E01,$FFFE,BPLCON3,$0C00,COLOR00,$0123,BPLCON3,$0E00,COLOR00,$0567
+        dc.w $1F01,$FFFE,BPLCON3,$0C00,COLOR00,$0123,BPLCON3,$0E00,COLOR00,$0678
+        dc.w $2001,$FFFE,BPLCON3,$0C00,COLOR00,$0123,BPLCON3,$0E00,COLOR00,$0789
+        dc.w $2101,$FFFE,BPLCON3,$0C00,COLOR00,$0123,BPLCON3,$0E00,COLOR00,$089A
+        dc.w $2201,$FFFE,BPLCON3,$0C00,COLOR00,$0123,BPLCON3,$0E00,COLOR00,$09AB
+        dc.w $2301,$FFFE,BPLCON3,$0C00,COLOR00,$0123,BPLCON3,$0E00,COLOR00,$0ABC
+        dc.w $2401,$FFFE,BPLCON3,$0C00,COLOR00,$0123,BPLCON3,$0E00,COLOR00,$0BCD
+        dc.w $2501,$FFFE,BPLCON3,$0C00,COLOR00,$0123,BPLCON3,$0E00,COLOR00,$0CDE
+        dc.w $2601,$FFFE,BPLCON3,$0C00,COLOR00,$0123,BPLCON3,$0E00,COLOR00,$0DEF
+        dc.w $2701,$FFFE,BPLCON3,$0C00,COLOR00,$0124,BPLCON3,$0E00,COLOR00,$0EF0
+        dc.w $2801,$FFFE,BPLCON3,$0C00,COLOR00,$0134,BPLCON3,$0E00,COLOR00,$0F01
+        dc.w $2901,$FFFE,BPLCON3,$0C00,COLOR00,$0234,BPLCON3,$0E00,COLOR00,$0012
+        dc.w $2A01,$FFFE,BPLCON3,$0C00,COLOR00,$0234,BPLCON3,$0E00,COLOR00,$0123
+        dc.w $2B01,$FFFE,BPLCON3,$0C00,COLOR00,$0234,BPLCON3,$0E00,COLOR00,$0234
+        dc.w BPLCON3,$0C00
         dc.w $FFFF,$FFFE
 
         cnop 0,4

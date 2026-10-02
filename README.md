@@ -1,12 +1,12 @@
 # AURORA GRID — Night Grid System
 
-A self-contained Amiga demo in 68000 assembly, made to run on an Amiga 1200 (and any 68000 Amiga in OCS/ECS mode).
+A self-contained Amiga demo in 68000 assembly. **Requires an Amiga 1200 or 4000 (AGA chipset).** On any other machine it prints a message and exits without touching the hardware.
 
-**Honest scope:** the display engine is the 4-bitplane / 16-colour OCS-compatible one inherited from an earlier project, so it runs on an A1200 but is *not* an AGA-native 256-colour demo. Everything you see and hear below was generated for this project.
+**How AGA is used (and how far it goes):** the demo checks for the AGA Lisa chip at startup, and the plasma and floor-bar gradients are driven through the AGA 24-bit palette (two `COLOR00` writes per scanline via `BPLCON3` `LOCT`), giving smooth 16-million-colour gradients that OCS/ECS cannot show. The main display (logo, stars, wireframes, scroller) is still the 4-bitplane / 16-colour layout inherited from an earlier project, so it is not a full 256-colour or 8-bitplane AGA demo.
 
 ## What's in it
 - **Logo:** procedurally drawn AURORA wordmark (distance-field letters, bevel lighting, violet extrusion) with a chiselled "NIGHT GRID SYSTEM" subtitle and a Copper-driven teal-to-blue gradient; wavy per-line scroll.
-- **Copper raster plasma:** the whole middle band is repainted every frame from three travelling sines (one a chirp), through a dim aurora palette. Strength is animated per scene.
+- **Copper raster plasma (24-bit):** the whole middle band is repainted every frame from three travelling sines (one a chirp), through a 192-step 24-bit aurora palette. Strength is animated per scene.
 - **Wireframe tunnel:** 5 twisting rings with a wandering axis, drawn with the blitter line engine.
 - **3D shapes:** cube, octahedron and a cuboctahedron, tumbling independently in perspective.
 - **Eight timed scenes** (256 frames each, loop ~41 s). Parameters ease between scenes: objects shrink away and grow back, speeds ramp, plasma strength fades. Scene table: `sec_tab` in `src/main.s`.
@@ -15,10 +15,11 @@ A self-contained Amiga demo in 68000 assembly, made to run on an Amiga 1200 (and
 
 ## Verification status
 - Builds cleanly; static validator passes.
-- Run in FS-UAE on an A1200 model: logo, plasma, cuboctahedron, tunnel + octahedron scenes and the scroller were checked by eye.
-- Frame timing was measured on an A500 (stock 68000) model with a beam-position probe: across one full scene loop the per-frame work ended at about beam line 295 in the heaviest scene, i.e. just before the vsync line (300) with a thin margin; the A1200 has ample headroom. This is an emulator measurement, not real hardware.
+- FS-UAE, A1200 model: logo, 24-bit plasma and bars, cuboctahedron, tunnel + octahedron scenes and the scroller were checked by eye.
+- FS-UAE, A500 model: the demo does not start (AGA gate). The refusal message text itself was not seen in the emulator window.
+- Frame timing: measured in FS-UAE (A1200 model) with a beam-position probe over a full scene loop: the worst frame's work ends around beam line 179 of 312, well before the vsync line (300), so 50 fps has lots of headroom. This is an emulator measurement, not real hardware.
 - Music was validated structurally and plays, but has not been listened to by the author of this repo.
-- A thin dark vertical bar appears at the left edge on the A500 emulator model only (not on A1200).
+- Not tested on real hardware.
 
 ## Build
 `make` (needs `vasmm68k_mot` on PATH or at `tools/bin/`). Output: `build/aurora_grid`. Left mouse button exits.

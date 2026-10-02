@@ -21,6 +21,34 @@ def lerp(c0, c1, t):
         out |= int(round(a + (b - a) * t)) << sh
     return out
 
+def c24(c12):
+    """12 bit $RGB -> 24 bit (each nibble doubled)."""
+    return (((c12 >> 8) & 15) * 17) << 16 | (((c12 >> 4) & 15) * 17) << 8 | ((c12 & 15) * 17)
+
+def lerp24(a, b, t):
+    out = 0
+    for sh in (16, 8, 0):
+        x, y = (a >> sh) & 255, (b >> sh) & 255
+        out |= int(round(x + (y - x) * t)) << sh
+    return out
+
+def ramp24(stops, t):
+    for (p0, c0), (p1, c1) in zip(stops, stops[1:]):
+        if t <= p1:
+            return lerp24(c24(c0), c24(c1), 0 if p1 == p0 else (t - p0) / (p1 - p0))
+    return c24(stops[-1][1])
+
+def hilo(c):
+    """24 bit colour -> (high nibbles word, low nibbles word) for the two AGA COLORxx writes."""
+    r, g, b = (c >> 16) & 255, (c >> 8) & 255, c & 255
+    return ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4), ((r & 15) << 8) | ((g & 15) << 4) | (b & 15)
+
+def longs(vals, per=4):
+    out = []
+    for i in range(0, len(vals), per):
+        out.append('        dc.l ' + ','.join('$%04X%04X' % hilo(v) for v in vals[i:i + per]))
+    return '\n'.join(out)
+
 def ramp(stops, t):
     """stops: [(pos, colour)], t in 0..1"""
     for (p0, c0), (p1, c1) in zip(stops, stops[1:]):
@@ -38,16 +66,16 @@ NBARS = 4
 def floor_base():
     """Static floor colour per row (a dark purple ramp) that the animated bars are drawn over."""
     fl = [(0.0, 0x012), (1.0, 0x234)]
-    return [ramp(fl, i / (FLOOR_H - 1)) for i in range(FLOOR_H)]
+    return [ramp24(fl, i / (FLOOR_H - 1)) for i in range(FLOOR_H)]
 
 def bar_colors():
-    """NBARS bars of 8 rows each: a colour with a soft bright core (intensity 1-2-3-4-4-3-2-1 / 4)."""
+    """NBARS bars of 8 rows each: a colour with a soft bright core (intensity 1-2-3-4-4-3-2-1 / 4), 24 bit."""
     bases = [0x3FC, 0x6AF, 0xB6F, 0xF6C]            # teal, blue, violet, pink
     prof = [1, 2, 3, 4, 4, 3, 2, 1]
     out = []
     for base in bases:
         for pk in prof:
-            out.append(lerp(0x002, base, pk / 4))
+            out.append(lerp24(c24(0x002), c24(base), pk / 4))
     return out
 
 MID_PALETTE = [0x001, 0xAAD, 0xFC5, 0xFC5, 0x779, 0xFFF, 0xFC5, 0xFC5,
@@ -82,7 +110,7 @@ def copper():
     ent.append((72, None))                                   # animated raster slot, then the wave reset
     # Middle band, y 76..195: one COLOR00 move per row, repainted every frame by UpdatePlasma.
     for i in range(MID_H):
-        ent.append((MID_Y0 + i, ('plasma', 0x001)))
+        ent.append((MID_Y0 + i, ('plasma', 0x000008)))
     # Scroller strip, y 197..218: frame lines, dark bar, gradient text colour.
     ent.append((196, [('COLOR00', 0x001)]))
     ent.append((197, [('COLOR00', 0x6CF)]))
@@ -99,8 +127,13 @@ def copper():
     ent.sort(key=lambda e: e[0])
     lines, wrapped = [], False
     first_wave = first_bar = first_plasma = True
+    prev24 = False
     for y, regs in ent:
         v = DISPLAY_TOP + y
+        is24 = isinstance(regs, tuple)
+        if prev24 and not is24:
+            lines.append('        dc.w BPLCON3,$0C00                  ; back to high-nibble colour writes')
+        prev24 = is24
         if v > 255 and not wrapped:
             lines.append('        dc.w $FFDF,$FFFE                    ; wrap: lines below are 256 + WAIT line')
             wrapped = True
@@ -111,21 +144,24 @@ def copper():
             lines.append('        dc.w COLOR00,$013                   ; animated by UpdateRaster each frame')
             lines.append('        dc.w BPLCON1,$0000')
             lines.append(mid_palette())
-        elif isinstance(regs, tuple):
+        elif is24:
             if regs[0] == 'plasma':
                 if first_plasma:
-                    lines.append('cop_plasma:                                 ; 120 rows of WAIT + COLOR00, 8 bytes each (value at +6)')
+                    lines.append('cop_plasma:                                 ; 120 rows of 20 bytes: WAIT, BPLCON3, COLOR00 high (+10), BPLCON3, COLOR00 low (+18)')
                     first_plasma = False
             elif first_bar:
-                lines.append('cop_bars:                                   ; 34 rows of WAIT + COLOR00, 8 bytes each (value at +6)')
+                lines.append('cop_bars:                                   ; 34 rows of 20 bytes, same layout as cop_plasma')
                 first_bar = False
-            lines.append('        dc.w $%04X,$FFFE,COLOR00,$%04X' % (pos, regs[1]))
+            hi, lo = hilo(regs[1])
+            lines.append('        dc.w $%04X,$FFFE,BPLCON3,$0C00,COLOR00,$%04X,BPLCON3,$0E00,COLOR00,$%04X' % (pos, hi, lo))
         else:
             if first_wave:
                 lines.append('cop_wave:                                   ; 64 rows, 16 bytes each (BPLCON1 value at +14)')
                 first_wave = False
             body = ','.join('%s,$%04X' % (r, val) for r, val in regs)
             lines.append('        dc.w $%04X,$FFFE,%s' % (pos, body))
+    if prev24:
+        lines.append('        dc.w BPLCON3,$0C00')
     lines.append('        dc.w $FFFF,$FFFE')
     return '\n'.join(lines)
 
@@ -216,8 +252,8 @@ def recip_wire():
 
 PLASMA_STOPS = [(0.0, 0x001), (0.25, 0x024), (0.5, 0x148), (0.75, 0x3A8), (1.0, 0x7CB)]
 def plasma_pal():
-    """48 dark-to-hot colours the plasma indexes with (kept dim so stars and wireframes stay readable)."""
-    return [ramp(PLASMA_STOPS, i / 47) for i in range(48)]
+    """192 dark-to-hot 24 bit colours the plasma indexes with (kept dim so stars and wireframes stay readable)."""
+    return [ramp24(PLASMA_STOPS, i / 191) for i in range(192)]
 
 def sintab():
     vals = [int(round(127 * math.sin(2 * math.pi * k / 256))) for k in range(256)]
@@ -250,7 +286,7 @@ def aga_palette():
 
 if __name__ == '__main__':
     print({'copper': copper, 'sintab': sintab, 'recip_star': recip_star, 'recip_wire': recip_wire,
-           'floor_base': lambda: words(floor_base()), 'bar_colors': lambda: words(bar_colors(), 8),
-           'wave_tab': lambda: words(wave_tab()), 'palette': header_palette, 'plasma_pal': lambda: words(plasma_pal(), 8),
+           'floor_base': lambda: longs(floor_base()), 'bar_colors': lambda: longs(bar_colors()),
+           'wave_tab': lambda: words(wave_tab()), 'palette': header_palette, 'plasma_pal': lambda: longs(plasma_pal()),
            'balls': lambda: words(balls(), 8), 'spr_palette': spr_palette,
            'ring_tab': lambda: '\n'.join('        dc.w ' + ','.join('%d' % v for v in ring_tab()[i:i + 16]) for i in range(0, 512, 16))}[sys.argv[1]]())

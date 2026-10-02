@@ -359,6 +359,8 @@ LVO_ARGS={
     'LVO_FreeMem'       :['a1','d0'],   # FreeMem(memoryBlock=a1, byteSize=d0)
     'LVO_TypeOfMem'     :['a1'],        # TypeOfMem(address=a1)
     'LVO_CopyMem'       :['a0','a1','d0'],  # CopyMem(source=a0, dest=a1, size=d0)
+    'LVO_Output'        :[],            # dos Output() -> d0
+    'LVO_Write'         :['d1','d2','d3'],  # dos Write(file=d1, buffer=d2, length=d3)
     'LVO_Forbid'        :[], 'LVO_Permit':[], 'LVO_Enable':[], 'LVO_Disable':[],
     'LVO_WaitTOF'       :[], 'LVO_OwnBlitter':[], 'LVO_WaitBlit':[],
     'LVO_DisownBlitter' :[],

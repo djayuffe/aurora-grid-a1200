@@ -9,14 +9,17 @@ from pathlib import Path
 import hashlib, sys
 
 R=Path(__file__).resolve().parents[1]
-SKIP_DIRS={'.git','build','__pycache__','vendor','tools/vendor','tools/bin','.venv','venv'}
+SKIP_DIRS={'.git','build','__pycache__','vendor','.venv','venv'}
+SKIP_PREFIXES=('tools/vendor/', 'tools/bin/')
 SKIP_SUFFIXES={'.pyc','.pyo','.o','.obj','.tmp','.bak','.orig','.rej','.DS_Store'}
 SKIP_NAMES={'MANIFEST.sha256','.DS_Store','a.out'}
 files=[]
 for p in sorted(R.rglob('*')):
     if not p.is_file(): continue
+    rel=p.relative_to(R).as_posix()
     parts=set(p.parts)
     if parts & SKIP_DIRS: continue
+    if rel.startswith(SKIP_PREFIXES): continue
     if p.suffix in SKIP_SUFFIXES or p.name in SKIP_NAMES: continue
     # Build stamps are state, not content: they are rewritten on every build.
     if p.name.startswith('.'): continue

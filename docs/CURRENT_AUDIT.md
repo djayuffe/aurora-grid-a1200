@@ -20,10 +20,9 @@ The repository was audited for naming consistency, AGA/OCS documentation drift, 
 - DMA-visible data is copied to verified chip RAM and pointer slots are rebased.
 - The frame loop separates time-critical Copper/list updates from blitter drawing.
 - The repo still requires VASM for a full executable build; host-only validation does not assemble the binary.
+- FS-UAE 3.2.35 A1200/internal-ROM visual smoke test booted from a temporary directory hard drive and displayed the renamed logo, plasma, wireframe object, sprite balls, floor bars and scroller.
 - Real hardware validation is still external/manual.
 
 ## Remaining release gates
 
-- Build with `vasmm68k_mot`.
-- Run under an A1200/AGA emulator.
 - Run on real PAL A1200/A4000 hardware before claiming hardware-complete status.

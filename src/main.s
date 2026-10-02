@@ -472,9 +472,17 @@ WireSwap:
 UpdateWave:
         move.l  ptr_wave,a1
         lea     wave_tab,a2
+        lea     logo_face,a3
         move.w  frame_no,d3
         lsl.w   #2,d3                      ; time: 4 table steps per frame
+        move.w  phys_flash,d0
+        lsl.w   #2,d0
+        add.w   d0,d3                      ; a kick pushes the phase: a ripple runs through the logo
+        move.w  frame_no,d5
+        andi.w  #127,d5
+        subi.w  #24,d5                     ; glint row: sweeps down the logo, then rests
         moveq   #0,d4                      ; row phase: 3 steps per row (~85 rows per wave)
+        moveq   #0,d6                      ; row number
         moveq   #LOGO_H-1,d7
 .w:
         move.w  d3,d0
@@ -482,8 +490,27 @@ UpdateWave:
         andi.w  #255,d0
         add.w   d0,d0
         move.w  0(a2,d0.w),14(a1)          ; BPLCON1 value for this row
+        move.w  (a3)+,d2                   ; the row's face colour
+        move.w  d6,d1
+        sub.w   d5,d1
+        bpl     .g1
+        neg.w   d1
+.g1:
+        cmp.w   #3,d1
+        bge     .g3
+        cmp.w   #2,d1
+        bge     .g2
+        move.w  #$0FFF,d2                  ; the glint core
+        bra     .g3
+.g2:
+        andi.w  #$0EEE,d2                  ; its edge: half way to white
+        lsr.w   #1,d2
+        addi.w  #$0777,d2
+.g3:
+        move.w  d2,10(a1)                  ; COLOR04
         lea     16(a1),a1
         addq.w  #3,d4
+        addq.w  #1,d6
         dbra    d7,.w
         rts
 
@@ -1174,7 +1201,12 @@ DrawWire:
         bsr     TunnelVerts
 .tun_hidden:
 
-        bsr     BlitWait                   ; the clear must be done before lines go in
+        bsr     BlitWait                   ; plane 1 is clear: now clear plane 3, where the tunnel is drawn
+        move.l  a0,a1
+        adda.l  #3*PLANE_SIZE+MID_Y0*SCREEN_W_BYTES,a1
+        move.l  a1,BLTDPTH(a6)
+        move.w  #(MID_H<<6)|(SCREEN_W_BYTES/2),BLTSIZE(a6)
+        bsr     BlitWait                   ; the clears must be done before lines go in
         move.w  #SCREEN_W_BYTES,BLTCMOD(a6)    ; registers every line shares: set once
         move.w  #SCREEN_W_BYTES,BLTDMOD(a6)
         move.w  #$8000,BLTADAT(a6)
@@ -1202,6 +1234,7 @@ DrawWire:
 .no_inner:
         cmp.w   #8,sec_tun
         ble     .no_tun
+        adda.l  #3*PLANE_SIZE,a0           ; the tunnel goes into plane 3: its own colour, white where it crosses an object
         lea     proj+104,a3
         lea     tun_edges,a4
         lea     tun_edges_end,a5
@@ -1282,7 +1315,29 @@ UpdatePlasma:
         move.w  frame_no,d3
         move.w  d3,d6
         add.w   d3,d6
-        add.w   d3,d6                      ; 3 * frame for the chirp
+        add.w   d3,d6
+        move.w  d6,plasma_t3               ; 3 * frame for the chirp
+        move.w  d3,d0
+        add.w   d3,d0
+        add.w   d3,d0
+        andi.w  #255,d0
+        add.w   d0,d0
+        move.w  0(a2,d0.w),d0
+        muls    #26,d0
+        asr.l   #7,d0
+        addi.w  #30,d0
+        move.w  d0,plasma_bar1             ; two bright bars wander up and down the plasma
+        move.w  d3,d0
+        add.w   d0,d0
+        addi.w  #85,d0
+        andi.w  #255,d0
+        add.w   d0,d0
+        move.w  0(a2,d0.w),d0
+        muls    #26,d0
+        asr.l   #7,d0
+        addi.w  #30,d0
+        move.w  d0,plasma_bar2
+        move.w  phys_flash,d2              ; the beat flash lifts every colour index by up to 24
         move.w  d3,d4                      ; phase 1 starts at frame (+7 on odd frames)
         move.w  d3,d5
         add.w   d5,d5
@@ -1306,13 +1361,50 @@ UpdatePlasma:
         add.w   0(a2,d0.w),d1              ; sine 2, the other way
         moveq   #0,d0
         move.b  (a4),d0
-        add.w   d6,d0
+        add.w   plasma_t3,d0
         andi.w  #255,d0
         add.w   d0,d0
         add.w   0(a2,d0.w),d1              ; sine 3, the chirp
         addi.w  #381,d1                    ; 0..762
         mulu    sec_plasma,d1
         lsr.l   #8,d1                      ; >>8: 0..190 at full strength
+        add.w   d2,d1
+        move.w  d7,d6
+        add.w   d6,d6
+        neg.w   d6
+        addi.w  #58,d6                     ; this row pair's number (the loop counts down)
+        btst    #0,d3
+        beq     .pe
+        addq.w  #1,d6
+.pe:
+        move.w  d6,d0
+        sub.w   plasma_bar1,d0
+        bpl     .b1
+        neg.w   d0
+.b1:
+        cmp.w   #7,d0
+        bge     .nb1
+        subi.w  #7,d0
+        neg.w   d0
+        lsl.w   #3,d0                      ; up to +56 on the bar's centre row
+        add.w   d0,d1
+.nb1:
+        move.w  d6,d0
+        sub.w   plasma_bar2,d0
+        bpl     .b2
+        neg.w   d0
+.b2:
+        cmp.w   #7,d0
+        bge     .nb2
+        subi.w  #7,d0
+        neg.w   d0
+        lsl.w   #3,d0
+        add.w   d0,d1
+.nb2:
+        cmpi.w  #191,d1
+        ble     .pc
+        move.w  #191,d1
+.pc:
         lsl.w   #2,d1
         move.l  0(a3,d1.w),d0              ; 24 bit colour as (high nibbles, low nibbles)
         move.w  d0,18(a1)
@@ -1463,6 +1555,9 @@ UpdatePhysics:
         cmp.w   #4,d0
         bne     .nobeat
         addq.w  #3,phys_spin               ; snare
+        cmpi.w  #10,phys_flash
+        bge     .nobeat
+        move.w  #10,phys_flash
         bra     .nobeat
 .kick:
         move.w  #$0300,d1
@@ -1475,6 +1570,7 @@ UpdatePhysics:
         addi.w  #$0240,phys_vz
         subi.w  #$0300,phys_vy
         addq.w  #5,phys_spin
+        move.w  #24,phys_flash
 .nobeat:
 ; --- x: weak spring to the middle, damping, bouncing walls
         move.w  phys_x,d0
@@ -1577,7 +1673,15 @@ UpdatePhysics:
 .zm:
         move.w  d0,phys_z
         move.w  d2,phys_vz
-; --- decay squash and spin
+; --- decay flash, squash and spin
+        move.w  phys_flash,d0
+        ble     .nofl
+        subq.w  #2,d0
+        bge     .flw
+        moveq   #0,d0
+.flw:
+        move.w  d0,phys_flash
+.nofl:
         move.w  frame_no,d0
         btst    #0,d0
         bne     .nosq
@@ -1899,6 +2003,10 @@ phys_vy:     dc.w 0
 phys_z:      dc.w 0
 phys_vz:     dc.w 0
 phys_squash: dc.w 0
+phys_flash:  dc.w 0                 ; beat flash, set on kick and snare, decays
+plasma_bar1: dc.w 0                 ; travelling bright bars, in row pairs
+plasma_bar2: dc.w 0
+plasma_t3:   dc.w 0
 phys_spin:   dc.w 0
 phys_xmax:   dc.w 0
 phys_ymax:   dc.w 0
@@ -1942,6 +2050,15 @@ sec_tab:
         dc.w 8,2,42, 6, 6, 6,30, 8      ; 5 warp: fast stars, cube
         dc.w 3,2,36, 6,24, 6,56, 8      ; 6 cube and cuboctahedron, strong plasma
         dc.w 3,2,42,28,22, 6,48, 8      ; 7 finale
+logo_face:                                  ; COLOR04 of each logo row (the glint is blended over it)
+        dc.w $FFF,$FFF,$FFF,$FFF,$FFF,$FFE,$FFD,$FFD
+        dc.w $FFC,$FEB,$FEA,$FEA,$FE9,$FE8,$FE8,$FD7
+        dc.w $FD7,$FD6,$FD6,$FC5,$FC5,$FC4,$FC4,$FB3
+        dc.w $FB3,$FB3,$FA3,$FA3,$F93,$F93,$F93,$F83
+        dc.w $E82,$E82,$E72,$E72,$E62,$E62,$E62,$E52
+        dc.w $E52,$E52,$E52,$E52,$E52,$E52,$E52,$E52
+        dc.w $E52,$E52,$E52,$E52,$E52,$E52,$E52,$E52
+        dc.w $E52,$E52,$E52,$E52,$E52,$E52,$E52,$E52
 plasma_sq:                                  ; (row pair squared) >> 5, for the plasma chirp
         dc.b 0,0,0,0,0,0,1,1,2,2,3,3,4,5,6,7
         dc.b 8,9,10,11,12,13,15,16,18,19,21,22,24,26,28,30
@@ -2404,9 +2521,9 @@ cop_raster_color:
         dc.w COLOR00,$013                   ; animated by UpdateRaster each frame
         dc.w BPLCON1,$0000
         dc.w COLOR01,$AAD,COLOR02,$FC5,COLOR03,$FC5,COLOR04,$779
-        dc.w COLOR05,$FFF,COLOR06,$FC5,COLOR07,$FC5,COLOR08,$F94
-        dc.w COLOR09,$F94,COLOR10,$FE9,COLOR11,$FE9,COLOR12,$F94
-        dc.w COLOR13,$F94,COLOR14,$FE9,COLOR15,$FE9
+        dc.w COLOR05,$FFF,COLOR06,$FC5,COLOR07,$FC5,COLOR08,$4FE
+        dc.w COLOR09,$4FE,COLOR10,$FFF,COLOR11,$FFF,COLOR12,$4FE
+        dc.w COLOR13,$4FE,COLOR14,$FFF,COLOR15,$FFF
 cop_plasma:                                 ; 120 rows of 20 bytes: WAIT, BPLCON3, COLOR00 high (+10), BPLCON3, COLOR00 low (+18)
         dc.w $7801,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008
         dc.w $7901,$FFFE,BPLCON3,$0C00,COLOR00,$0000,BPLCON3,$0E00,COLOR00,$0008

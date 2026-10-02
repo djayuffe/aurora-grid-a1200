@@ -79,7 +79,7 @@ def bar_colors():
     return out
 
 MID_PALETTE = [0x001, 0xAAD, 0xFC5, 0xFC5, 0x779, 0xFFF, 0xFC5, 0xFC5,
-               0xF94, 0xF94, 0xFE9, 0xFE9, 0xF94, 0xF94, 0xFE9, 0xFE9]
+               0x4FE, 0x4FE, 0xFFF, 0xFFF, 0x4FE, 0x4FE, 0xFFF, 0xFFF]
 # index = plane0 + 2*plane1 + 4*plane2 + 8*plane3:
 #   1 mid star | 4 far star | 5 near star | planes 1 or 3 set: object shades (1: wire / shade 1,
 #   3 only: shade 2, 1 and 3: shade 3), so an object always hides the stars behind it.
@@ -164,6 +164,11 @@ def copper():
         lines.append('        dc.w BPLCON3,$0C00')
     lines.append('        dc.w $FFFF,$FFFE')
     return '\n'.join(lines)
+
+def logo_face():
+    """The 64 per-row values of COLOR04 (the gold face gradient); UpdateWave sweeps a glint over them."""
+    face = [(0.0, 0xFFF), (0.25, 0xFE8), (0.55, 0xFB3), (1.0, 0xE52)]
+    return [ramp(face, max(0.0, min(1.0, (i - 4) / 36))) for i in range(64)]
 
 def wave_tab():
     # 256 BPLCON1 values for the wavy logo: 8 + round-down(sin * 6 / 128), same nibble for both playfields.
@@ -317,6 +322,6 @@ def aga_palette():
 if __name__ == '__main__':
     print({'copper': copper, 'sintab': sintab, 'recip_star': recip_star, 'recip_wire': recip_wire,
            'floor_base': lambda: longs(floor_base()), 'bar_colors': lambda: longs(bar_colors()),
-           'wave_tab': lambda: words(wave_tab()), 'palette': header_palette, 'plasma_pal': lambda: longs(plasma_pal()),
+           'wave_tab': lambda: words(wave_tab()), 'palette': header_palette, 'logo_face': lambda: words(logo_face(), 8), 'plasma_pal': lambda: longs(plasma_pal()),
            'balls': lambda: words(balls(), 8), 'spr_palette': spr_palette,
            'ring_tab': lambda: '\n'.join('        dc.w ' + ','.join('%d' % v for v in ring_tab()[i:i + 16]) for i in range(0, 512, 16))}[sys.argv[1]]())

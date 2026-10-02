@@ -10,6 +10,7 @@ A self-contained Amiga demo in 68000 assembly. **Requires an Amiga 1200 or 4000 
 - **Wireframe tunnel:** 5 twisting rings with a wandering axis, drawn with the blitter line engine.
 - **3D shapes with physics:** cube, octahedron and a cuboctahedron tumble in perspective. Every kick drum row in the music throws them sideways, up and away from the viewer; gravity pulls them back, they bounce off invisible walls and floor (sized so nothing leaves the band), squash on hard landings and get a spin boost on kick and snare.
 - **Eight timed scenes** (256 frames each, loop ~41 s). Parameters ease between scenes: objects shrink away and grow back, speeds ramp, plasma strength fades. Scene table: `sec_tab` in `src/main.s`.
+- **Beat-reactive and layered effects:** the plasma flashes on kick/snare, a ripple runs through the logo wave, a glint sweeps across the logo face, two bright bars wander through the plasma, and the tunnel is drawn in its own bitplane (cyan, white where it crosses the amber objects).
 - **Hardware sprite ball ring:** 8 balls with prebuilt rotation frames - a striped surface that visibly turns, key light, specular highlight, bounce-light rim and dithered shadow terminator. Depth starfield (new stars never spawn in a central dead zone where they would crawl and look stuck), copper-bar floor, scroller text.
 - **Music:** generated 4-channel ProTracker module in D minor (triangle bass, saw lead, pad arpeggios, kick/snare/hats, fills), 10-step song order.
 
@@ -18,6 +19,7 @@ A self-contained Amiga demo in 68000 assembly. **Requires an Amiga 1200 or 4000 
 - FS-UAE, A1200 model: logo, 24-bit plasma and bars, cuboctahedron, tunnel + octahedron scenes and the scroller were checked by eye.
 - FS-UAE, A500 model: the demo does not start (AGA gate). The refusal message text itself was not seen in the emulator window.
 - Frame timing: measured in FS-UAE (A1200 model) with a beam-position probe over a full scene loop, after the physics, star and ball changes: the worst frame's work ends around beam line 186 of 312, well before the vsync line (300). Emulator measurement, not real hardware.
+- Plasma bars, flash, logo glint and the cyan tunnel were checked by eye. Frame timing was not re-measured after these last effects. During one timing run with an instrumented copy the demo returned to the desktop on its own after about a minute; the normal build ran for well over 90 seconds without exiting, so the cause was not found.
 - Physics, star respawn and ball lighting were checked by eye from screenshots (stills cannot show motion smoothness).
 - Music was validated structurally and plays, but has not been listened to by the author of this repo.
 - Not tested on real hardware.
